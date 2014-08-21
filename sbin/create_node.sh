@@ -23,7 +23,7 @@ PYTHON=$(which python3)
 CURRENT_DIR=$(dirname $(readlink -f $0))
 ROOT_PASSWORD='root_password'
 
-# create nodes
+# create node
 RESULT=$(${PYTHON} ${CURRENT_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE_ID} -i ${IMAGE} -r ${REGION})
 
 TOKENS=( ${RESULT} ); 
@@ -31,8 +31,10 @@ TOKENS=( ${RESULT} );
 PUBLIC_IP=${TOKENS[0]}
 PRIVATE_IP=${TOKENS[1]}
 
+# acquire temporary password
 TMP_PASSWORD=$(${PYTHON} ${CURRENT_DIR}/fetchmail.py -s ${EMAIL_SERVER} -u ${EMAIL_USERNAME} -p ${EMAIL_PASSWORD} -n ${HOSTNAME})
 
 ssh-keygen -R ${PUBLIC_IP} -f "${HOME}/.ssh/known_hosts" >> /dev/null 2>&1
 
+# reset password
 ${CURRENT_DIR}/init-${REGION}.ex ${PUBLIC_IP} ${TMP_PASSWORD} ${ROOT_PASSWORD} >> /dev/null 2>&1
