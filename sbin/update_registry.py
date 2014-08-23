@@ -2,6 +2,7 @@
 
 import os, sys, argparse, json
 import shutil
+import copy
 import tempfile
 
 from contextlib import closing
@@ -16,26 +17,34 @@ def save_registry(f, registry):
 	f.seek(0)
 	f.write(json.dumps(registry, indent=2))
 
-def add_host_entry(f, hostname, public_ip, private_ip):
-	data = load_registry(f)
-	entries = data['entries']
-	
-	if any(e['hostname'] == hostname for e in entries):
+def add_host_entry(data, hostname, public_ip, private_ip):
+	if any(entry['hostname'] == hostname for entry in data['entries']):
 		raise ValueError('Duplicated hostname')
 	else:
-		entries.append({ 'hostname': hostname, 'public': public_ip, 'private': private_ip })
-		save_registry(f, data)
-		return data
+		ret = copy.deepcopy(data)
+		ret['entries'].append({ 'hostname': hostname, 'public': public_ip, 'private': private_ip })
+		return ret
 
-def generate_public_hosts(f, g, entries):
-	entry_list = [ '%s\t%s' % (entry['public'], entry['hostname']) for entry in entries ]
+def remove_host_entry(data, hostname):
+	ret = copy.deepcopy(data)
+	e = next((entry for entry in ret['entries'] if entry['hostname'] == hostname), None)
+	
+	if e:
+		ret['entries'].remove(e)
+		return ret
+	else:
+		raise ValueError('Duplicated hostname')
+
+def add_public_hosts(f, data):
+	for entry in ('%s\t%s\n' % (entry['public'], entry['hostname']) for entry in data['entries']):
+		f.write(entry)
+
+def remove_public_hosts(f, g, data):
+	entries = ['%s\t%s' % (entry['public'], entry['hostname']) for entry in data['entries']]
 
 	for line in f:
-		if not line.strip() in entry_list:
+		if line.strip() not in entries:
 			g.write(line)
-
-	for entry in entry_list:
-		g.write(entry + '\n')
 
 PRIVATE_HOSTS_TEMPLATE = '''127.0.0.1	localhost
 127.0.1.1	VAR_HOSTNAME
@@ -49,26 +58,74 @@ ff02::2 ip6-allrouters
 
 '''
 
-def generate_private_hosts(f, entries):
+def generate_private_hosts(f, data):
 	f.write(PRIVATE_HOSTS_TEMPLATE)
-	for entry in entries:
+	for entry in data['entries']:
 		f.write('{ip}\t{hostname}\n'.format(hostname = entry['hostname'], ip = entry['private']))
 
 def add_host(**args):
 
 	try:
+		# read registry
 		with open(args['registry'], "r+") as f:
-			data = add_host_entry(f, args['hostname'], args['public_ip'], args['private_ip'])
+			data = load_registry(f)
 			
+		# clean hosts
 		with open(args['public_hosts'], "r") as f:
 			updated_hosts_fd, updated_hosts_path = tempfile.mkstemp()
 			with closing(os.fdopen(updated_hosts_fd, 'w')) as g:
-				generate_public_hosts(f, g, data['entries'])
+				remove_public_hosts(f, g, data)
+	
+		# add registry
+		data = add_host_entry(data, args['hostname'], args['public_ip'], args['private_ip'])
+		
+		os.remove(args['registry'])
+		with open(args['registry'], "w") as f:
+			save_registry(f, data)
+		
+		# add public hosts
+		with open(updated_hosts_path, 'a') as f:
+			add_public_hosts(f, data)
 		
 		shutil.copy(updated_hosts_path, args['public_hosts'])
 			
 		with open(args['private_hosts'], "w+") as f:
-			generate_private_hosts(f, data['entries'])
+			generate_private_hosts(f, data)
+
+	except Exception as e:
+		print(e)
+		return 1
+
+	return 0
+
+def remove_host(**args):
+
+	try:
+		# read registry
+		with open(args['registry'], "r+") as f:
+			data = load_registry(f)
+			
+		# clean hosts
+		with open(args['public_hosts'], "r") as f:
+			updated_hosts_fd, updated_hosts_path = tempfile.mkstemp()
+			with closing(os.fdopen(updated_hosts_fd, 'w')) as g:
+				remove_public_hosts(f, g, data)
+		
+		# remove registry
+		data = remove_host_entry(data, args['hostname'])
+		
+		os.remove(args['registry'])
+		with open(args['registry'], "w") as f:
+			save_registry(f, data)
+		
+		# add public hosts
+		with open(updated_hosts_path, 'a') as f:
+			add_public_hosts(f, data)
+		
+		shutil.copy(updated_hosts_path, args['public_hosts'])
+			
+		with open(args['private_hosts'], "w+") as f:
+			generate_private_hosts(f, data)
 
 	except Exception as e:
 		print(e)
@@ -92,7 +149,7 @@ def main():
 	if 'add' == sys.argv[1]:
 		add_host(**args)
 	elif 'remove' == sys.argv[1]:
-		print('remove')
+		remove_host(**args)
 	else:
 		print('error')
 
