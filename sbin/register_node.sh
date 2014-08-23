@@ -18,6 +18,7 @@ PYTHON=$(which python3)
 CURRENT_DIR=$(dirname $(readlink -f $0))
 BASE_DIR=$(dirname ${CURRENT_DIR})
 CLUSTER_DIR=${BASE_DIR}/clusters/${CLUSTER_NAME}
+ROOT_PASSWORD='root_password'
 
 if [ ! -d ${CLUSTER_DIR} ]
 then
@@ -30,5 +31,13 @@ cp /etc/hosts ${CLUSTER_DIR}/public-hosts
 
 ${PYTHON} ${CURRENT_DIR}/update_registry.py add -r ${CLUSTER_DIR}/registry -n ${HOSTNAME} -s ${CLUSTER_DIR}/public-hosts -t ${CLUSTER_DIR}/private-hosts -u ${PUBLIC_IP} -v ${PRIVATE_IP}
 
-sudo cp ${CLUSTER_DIR}/public-hosts /etc/hosts
+sudo mv ${CLUSTER_DIR}/public-hosts /etc/hosts
 sudo service nscd restart
+
+# add ssh fingerprint
+ssh-add ${HOME}/.ssh/id_rsa
+
+${CLUSTER_DIR}/copy-ssh-first.ex ${HOME}/.ssh/id_rsa.pub ${HOSTNAME} root ${ROOT_PASSWORD}
+
+ssh-keyscan -H ${PUBLIC_IP} >> ~/.ssh/known_hosts
+ssh-keyscan -H ${HOSTNAME} >> ~/.ssh/known_hosts
