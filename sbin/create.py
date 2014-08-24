@@ -8,12 +8,11 @@ Created on Mar 26, 2014
 # example:
 # python3 create.py -c njxEdecoXRqufrmc9xcJ9 -a d2cb3cd48a93da819e67c0eb8ad34196 -n testhost -s 62 -i ubuntu-14.04 -r sgp1
 
-import sys, argparse, time
+import sys, argparse
 from dopy.manager import DoManager
 
 IMAGE_ID_MAP = { 'ubuntu-14.04': 5141286 }
 REGION_ID_MAP = { 'nyc2': 4, 'sgp1': 6 }
-WAIT_UNIT = 10
 
 def main():
 	parser = argparse.ArgumentParser(description='')
@@ -34,26 +33,10 @@ def main():
 
 	try:
 		do = DoManager(args['client_id'], args['api_key'])
+		do.new_droplet(hostname, size, image_id, region_id, virtio=True, private_networking=True)
 		
-		while True:
-			droplet_id = do.new_droplet(hostname, size, image_id, region_id, virtio=True, private_networking=True)['id']
-			
-			while True:
-				new_droplets = [ droplet['id'] for droplet in do.all_active_droplets() if droplet['status'] == 'new' ]
-				active_droplets = [ droplet['id'] for droplet in do.all_active_droplets() if droplet['status'] == 'active' ]
-				
-				if droplet_id in active_droplets:
-					# succeeded
-					droplet = next((item for item in do.all_active_droplets() if item['id'] == droplet_id))
-					print("%s\t%s" % (droplet['ip_address'], droplet['private_ip_address']))
-					return 0
-				elif droplet_id in new_droplets:
-					# wait
-					time.sleep(WAIT_UNIT)
-				else:
-					# retry
-					break
-
+		return 0
+					
 	except Exception as e:
 		print(e)
 		return 1
