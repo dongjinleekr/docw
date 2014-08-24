@@ -17,12 +17,12 @@ def save_registry(f, registry):
 	f.seek(0)
 	f.write(json.dumps(registry, indent=2))
 
-def add_host_entry(data, hostname, public_ip, private_ip):
+def add_host_entry(data, clustername, hostname, public_ip, private_ip):
 	if any(entry['hostname'] == hostname for entry in data['entries']):
 		raise ValueError('Duplicated hostname')
 	else:
 		ret = copy.deepcopy(data)
-		ret['entries'].append({ 'hostname': hostname, 'public': public_ip, 'private': private_ip })
+		ret['entries'].append({ 'hostname': hostname, 'clustername': clustername, 'public': public_ip, 'private': private_ip })
 		return ret
 
 def remove_host_entry(data, hostname):
@@ -77,7 +77,7 @@ def add_host(**args):
 				remove_public_hosts(f, g, data)
 	
 		# add registry
-		data = add_host_entry(data, args['hostname'], args['public_ip'], args['private_ip'])
+		data = add_host_entry(data, args['clustername'], args['hostname'], args['public_ip'], args['private_ip'])
 		
 		os.remove(args['registry'])
 		with open(args['registry'], "w") as f:
@@ -138,6 +138,7 @@ def main():
 	parser.add_argument('-r', '--registry', type=str, required=True, help='')
 	parser.add_argument('-s', '--public-hosts', type=str, required=True, help='')
 	parser.add_argument('-t', '--private-hosts', type=str, required=True, help='')
+	parser.add_argument('-c', '--clustername', type=str, required=False, help='')
 	parser.add_argument('-n', '--hostname', type=str, required=True, help='')
 	parser.add_argument('-u', '--public-ip', type=str, required=False, help='')
 	parser.add_argument('-v', '--private-ip', type=str, required=False, help='')
