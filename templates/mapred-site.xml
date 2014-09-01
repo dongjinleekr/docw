@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+<!-- Put site-specific property overrides in this file. -->
+
+<configuration>
+	<!-- daemon configurations -->
+	<property>
+		<name>mapred.job.tracker</name>
+		<value>VAR_NAMENODE:54311</value>
+	</property>
+	<property>
+		<name>mapred.tasktracker.map.tasks.maximum</name>
+		<value>VAR_MAP_TASK_MAX</value>
+	</property>
+	<property>
+		<name>mapred.tasktracker.reduce.tasks.maximum</name>
+		<value>VAR_REDUCE_TASK_MAX</value>
+	</property>
+	<property>
+		<name>mapred.task.timeout</name>
+		<value>7200000</value><!-- 120 minutes -->
+	</property>
+	<!-- disk configurations -->
+	<property>
+		<name>mapred.local.dir</name>
+		<value>/home/hduser/var/hadoop/mapred/local</value>
+	</property>
+	<property>
+		<name>mapred.system.dir</name>
+		<value>/home/hduser/var/hadoop/mapred/system</value>
+	</property>
+	<!-- memory configurations -->
+	<property>
+		<name>mapred.child.java.opts</name>
+		<value>-XmxVAR_TASK_HEAP_MAXm</value>
+	</property>
+	<property>
+		<name>mapred.child.ulimit</name>
+		<value>-XmxVAR_HEAP_MAXm</value>
+	</property>
+	<property>
+		<name>io.sort.factor</name>
+		<value>25</value>
+	</property>
+	<property>
+		<name>io.sort.mb</name>
+		<value>250</value>
+	</property>
+</configuration>

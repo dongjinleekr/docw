@@ -8,7 +8,7 @@ ID_SEQUENCE_PATH=${SETTINGS_DIR}/sequence
 CFG_PATH=${SETTINGS_DIR}/config.cfg
 
 [ -d "${SETTINGS_DIR}" ] || mkdir ${SETTINGS_DIR}
-[ -f "${REGISTRY_PATH}" ] || echo '{ \"entries\": [] }' > ${REGISTRY_PATH}
+[ -f "${REGISTRY_PATH}" ] || echo '{ "entries": [] }' > ${REGISTRY_PATH}
 [ -f "${ID_SEQUENCE_PATH}" ] || echo '0' > ${ID_SEQUENCE_PATH}
 [ -f "${CFG_PATH}" ] || { echo 'config.cfg missing!!'; exit 1 ; }
 
@@ -40,12 +40,11 @@ register_node() {
 	CLUSTER_NAME=$1
 	HOSTNAME=$2
 
-	REGISTRY_PATH=${BASE_DIR}/registry
-	PRIVATE_HOSTS_PATH=${BASE_DIR}/private-hosts
-	PUBLIC_HOSTS_PATH=${BASE_DIR}/public-hosts
+	PRIVATE_HOSTS_PATH=${WORKING_DIR}/private-hosts
+	PUBLIC_HOSTS_PATH=${WORKING_DIR}/public-hosts
 
 	# acquire ip address
-	RESULT=$(${PYTHON} ${SBIN_DIR}/inspect.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME})
+	RESULT=$(${PYTHON} ${SBIN_DIR}/inspect.py ${CLIENT_ID} ${API_KEY} ${HOSTNAME})
 	TOKENS=( ${RESULT} )
 	PUBLIC_IP=${TOKENS[0]}
 	PRIVATE_IP=${TOKENS[1]}
@@ -57,17 +56,11 @@ register_node() {
 
 	# reset password
 	${SBIN_DIR}/init-${REGION}.ex ${PUBLIC_IP} ${TMP_PASSWORD} ${ROOT_PASSWORD} > /dev/null 2>&1
-	
-	# update registry file and /etc/hosts (local)
-	if [ ! -f ${REGISTRY_PATH} ]
-	then
-		touch ${REGISTRY_PATH}
-	fi
 
 	touch ${PRIVATE_HOSTS_PATH}
 	cp /etc/hosts ${PUBLIC_HOSTS_PATH}
 
-	${PYTHON} ${SBIN_DIR}/registry.py add -r ${REGISTRY_PATH} -c ${CLUSTER_NAME} -n ${HOSTNAME} -s ${PUBLIC_HOSTS_PATH} -t ${PRIVATE_HOSTS_PATH} -u ${PUBLIC_IP} -v ${PRIVATE_IP}
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add ${PUBLIC_HOSTS_PATH} ${PRIVATE_HOSTS_PATH} ${CLUSTER_NAME} ${HOSTNAME} ${PUBLIC_IP} ${PRIVATE_IP}
 
 	sudo mv ${PUBLIC_HOSTS_PATH} /etc/hosts
 	sudo service nscd restart > /dev/null 2>&1
@@ -101,8 +94,6 @@ unregister_node() {
 	ssh-keygen -R ${PUBLIC_IP}
 	ssh-keygen -R ${HOSTNAME}
 
-	# update registry file
-	REGISTRY_PATH=${BASE_DIR}/registry
 	PRIVATE_HOSTS_PATH=${BASE_DIR}/private-hosts
 	PUBLIC_HOSTS_PATH=${BASE_DIR}/public-hosts
 	
@@ -114,7 +105,7 @@ unregister_node() {
 
 	cp /etc/hosts ${PUBLIC_HOSTS_PATH}
 
-	${PYTHON} ${SBIN_DIR}/registry.py remove -r ${REGISTRY_PATH} -n ${HOSTNAME} -s ${PUBLIC_HOSTS_PATH} -t ${PRIVATE_HOSTS_PATH}
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} remove ${PUBLIC_HOSTS_PATH} ${PRIVATE_HOSTS_PATH} ${HOSTNAME}
 
 	sudo mv ${PUBLIC_HOSTS_PATH} /etc/hosts
 	sudo service nscd restart > /dev/null 2>&1
@@ -140,7 +131,7 @@ unregister_and_destroy() {
 unregister_and_destroy_cluster() {
 	CLUSTER_NAME=$1
 	
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	for HOSTNAME in ${HOSTNAMES[@]}
@@ -209,7 +200,7 @@ configure_hadoop_slave_all() {
 	CLUSTER_NAME=$1
 	
 	# configure slaves
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	PID_LIST=""
@@ -242,7 +233,7 @@ generate_hadoop_settings() {
 	CLUSTER_NAME=$1
 	MASTER_HOSTNAME=$2
 	
-	SMALLEST_SIZE=$(${PYTHON} ${SBIN_DIR}/registry.py minsize -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	SMALLEST_SIZE=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} minsize ${CLUSTER_NAME})
 	RESULT=$(${PYTHON} ${SBIN_DIR}/hadoop_conf.py ${SMALLEST_SIZE})
 	TOKENS=( ${RESULT} )
 	MAP_TASK_MAX=${TOKENS[0]}
@@ -266,7 +257,7 @@ generate_hadoop_settings() {
 	echo "${MASTER_HOSTNAME}" > ${WORKING_DIR}/masters
 
 	# create slaves
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	for HOSTNAME in ${HOSTNAMES[@]}
