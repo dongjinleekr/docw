@@ -67,7 +67,7 @@ register_node() {
 	touch ${PRIVATE_HOSTS_PATH}
 	cp /etc/hosts ${PUBLIC_HOSTS_PATH}
 
-	${PYTHON} ${SBIN_DIR}/update_registry.py add -r ${REGISTRY_PATH} -c ${CLUSTER_NAME} -n ${HOSTNAME} -s ${PUBLIC_HOSTS_PATH} -t ${PRIVATE_HOSTS_PATH} -u ${PUBLIC_IP} -v ${PRIVATE_IP}
+	${PYTHON} ${SBIN_DIR}/registry.py add -r ${REGISTRY_PATH} -c ${CLUSTER_NAME} -n ${HOSTNAME} -s ${PUBLIC_HOSTS_PATH} -t ${PRIVATE_HOSTS_PATH} -u ${PUBLIC_IP} -v ${PRIVATE_IP}
 
 	sudo mv ${PUBLIC_HOSTS_PATH} /etc/hosts
 	sudo service nscd restart > /dev/null 2>&1
@@ -114,7 +114,7 @@ unregister_node() {
 
 	cp /etc/hosts ${PUBLIC_HOSTS_PATH}
 
-	${PYTHON} ${SBIN_DIR}/update_registry.py remove -r ${REGISTRY_PATH} -n ${HOSTNAME} -s ${PUBLIC_HOSTS_PATH} -t ${PRIVATE_HOSTS_PATH}
+	${PYTHON} ${SBIN_DIR}/registry.py remove -r ${REGISTRY_PATH} -n ${HOSTNAME} -s ${PUBLIC_HOSTS_PATH} -t ${PRIVATE_HOSTS_PATH}
 
 	sudo mv ${PUBLIC_HOSTS_PATH} /etc/hosts
 	sudo service nscd restart > /dev/null 2>&1
@@ -140,7 +140,7 @@ unregister_and_destroy() {
 unregister_and_destroy_cluster() {
 	CLUSTER_NAME=$1
 	
-	RESULT=$(${PYTHON} ${SBIN_DIR}/update_registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	for HOSTNAME in ${HOSTNAMES[@]}
@@ -209,7 +209,7 @@ configure_hadoop_slave_all() {
 	CLUSTER_NAME=$1
 	
 	# configure slaves
-	RESULT=$(${PYTHON} ${SBIN_DIR}/update_registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	PID_LIST=""
@@ -242,7 +242,7 @@ generate_hadoop_settings() {
 	CLUSTER_NAME=$1
 	MASTER_HOSTNAME=$2
 	
-	SMALLEST_SIZE=$(${PYTHON} ${SBIN_DIR}/update_registry.py minsize -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	SMALLEST_SIZE=$(${PYTHON} ${SBIN_DIR}/registry.py minsize -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
 	RESULT=$(${PYTHON} ${SBIN_DIR}/hadoop_conf.py ${SMALLEST_SIZE})
 	TOKENS=( ${RESULT} )
 	MAP_TASK_MAX=${TOKENS[0]}
@@ -266,7 +266,7 @@ generate_hadoop_settings() {
 	echo "${MASTER_HOSTNAME}" > ${WORKING_DIR}/masters
 
 	# create slaves
-	RESULT=$(${PYTHON} ${SBIN_DIR}/update_registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py list -r ${REGISTRY_PATH} -c ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	for HOSTNAME in ${HOSTNAMES[@]}
