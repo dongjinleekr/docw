@@ -1,0 +1,101 @@
+#!/bin/bash
+
+usage="$(basename "$0") [<command>] [<options>] [-h]
+
+where:
+    command	(make)
+    options	option for each command
+    -h		show help text"
+
+make_usage="$(basename "$0") make [<goal>] [<options>] [-h]
+
+where:
+    goal	(nodes)
+    options	option for each command
+    -h		show help text"
+
+make_node() {
+	[ "$#" -eq 2 ] || return 1
+	
+	HOSTNAME=$1
+	SIZE=$2
+	
+	return 0
+}
+
+make_nodes() {
+	[ "$#" -eq 2 ] || return 1
+	
+	NODECOUNT=$1
+	SIZE=$2
+
+	ID_START=$(cat ${ID_SEQUENCE_PATH})
+	ID_END=$((${ID_START} + ${NODECOUNT} - 1))
+	ID_NEXT=$((${ID_END} + 1))
+	
+	echo ${ID_NEXT} > ${ID_SEQUENCE_PATH}
+
+	PID_LIST=""
+	for I in $(seq ${ID_START} ${ID_END})
+	do
+		HOSTNAME=$(printf ${HOSTNAME_PREFIX} ${I})
+		create_node ${HOSTNAME} ${SIZE} &
+	PID_LIST=${PID_LIST}' '$!
+	done
+	
+	wait_all ${PID_LIST}
+
+	return 0
+}
+
+process_make() {
+	[ "$#" -ge 1 ] || return 1
+	
+	COMMAND=$1
+	shift 1
+	
+	case $COMMAND in
+		node)
+			make_node $@
+		
+			RETVAL=$?
+			[ "${RETVAL}" -eq 0 ] && return 0
+			;;
+		nodes)
+			make_nodes $@
+		
+			RETVAL=$?
+			[ "${RETVAL}" -eq 0 ] && return 0
+			;;
+		-h)
+			echo "${make_usage}" >&2
+			return 0
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+# initialize env
+BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
+. ${BASE_DIR}/common.sh
+
+case $1 in
+	-h)
+		echo "$usage"
+		exit 0
+		;;
+	make)
+		shift 1
+		process_make $@
+		
+		RETVAL=$?
+		[ "${RETVAL}" -eq 0 ] && exit 0
+		;;
+	*)
+		echo "illegal command: $@" >&2
+		echo "$usage" >&2
+		exit 1
+		;;
+esac
