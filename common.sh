@@ -26,6 +26,26 @@ REMOTE_HOST_PASSWD='hduser'
 HADOOP_VERSION=1.2.1
 SNAPPY_VERSION=1.1.1
 
+# wait all
+wait_all() {
+	${PYTHON} - $@ << 'EOF'
+#!/usr/bin/python3
+
+import sys, psutil
+
+def main():
+	waitfor = set([ int(pid) for pid in sys.argv[1:] ])
+
+	while waitfor:
+		waitfor.intersection_update(set(psutil.get_pid_list()))
+
+	return 0;
+
+if __name__ == "__main__":
+	sys.exit(main())
+EOF
+}
+
 # create node
 create_node() {
 	HOSTNAME=$1
