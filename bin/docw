@@ -7,26 +7,37 @@ BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
 . ${BASE_DIR}/common.sh
 
 print_usage() {
+  echo ""
   echo "Usage: docw [<command>] [<options>]"
-  echo "where command is one of:"
-  echo "  make                 create node(s)"
-  echo "  rm                   remove node(s)"
-  echo "All commands print help when invoked without parameters, or with -h"
+  echo ""
+  echo "  where command is one of:"
+  echo "    make                 create node(s)"
+  echo "    rm                   remove node(s)"
+  echo ""
+  echo "  All commands print help when invoked without parameters, or with -h"
+  echo ""
 }
 
 print_make_usage() {
+  echo ""
   echo "Usage: docw make [<options>]"
-  echo "where options are one of:"
-  echo "  node <hostname> <size>   create node sized <size> and named <hostname>"
-  echo "  nodes <count> <size>     create <count> nodes at once, sized <size>. hostnames are assigned automatically."
-  echo "<size> is specified by the number of cores of desired node size."
-  echo "For details, please refer https://www.digitalocean.com/pricing/"
+  echo ""
+  echo "  where options are one of:"
+  echo "    node <hostname> <size>   create node sized <size> and named <hostname>"
+  echo "    nodes <count> <size>     create <count> nodes at once, sized <size>. hostnames are assigned automatically."
+  echo ""
+  echo "  <size> is specified by the number of cores of desired node size."
+  echo "  For details, please refer https://www.digitalocean.com/pricing/"
+  echo ""
 }
 
 print_rm_usage() {
+  echo ""
   echo "Usage: docw rm [<options>]"
-  echo "where options are one of:"
-  echo "  cluster <clustername>    remove all nodes that belongs to <clustername>."
+  echo ""
+  echo "  where options are one of:"
+  echo "    cluster <clustername>    remove all nodes that belongs to <clustername>."
+  echo ""
 }
 
 make_node() {
