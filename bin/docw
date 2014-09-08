@@ -1,18 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-usage="$(basename "$0") [<command>] [<options>] [-h]
+# The docw command script
 
-where:
-    command	(make)
-    options	option for each command
-    -h		show help text"
+# initialize env
+BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
+. ${BASE_DIR}/common.sh
 
-make_usage="$(basename "$0") make [<goal>] [<options>] [-h]
+print_usage() {
+  echo "Usage: docw [<command>] [<options>]"
+  echo "where command is one of:"
+  echo "  make                 create node(s)"
+  echo "All commands print help when invoked without parameters, or with -h"
+}
 
-where:
-    goal	(nodes)
-    options	option for each command
-    -h		show help text"
+print_make_usage() {
+  echo "Usage: docw make [<options>]"
+  echo "where options are one of:"
+  echo "  node <hostname> <size>   create node sized <size> and named <hostname>"
+  echo "  nodes <count> <size>     create <count> nodes at once, sized <size>. hostnames are assigned automatically."
+  echo "<size> is specified by the number of cores of desired node size."
+  echo "For details, please refer https://www.digitalocean.com/pricing/"
+}
 
 make_node() {
 	[ "$#" -eq 2 ] || return 1
@@ -49,8 +57,6 @@ make_nodes() {
 }
 
 process_make() {
-	[ "$#" -ge 1 ] || return 1
-	
 	COMMAND=$1
 	shift 1
 	
@@ -67,8 +73,12 @@ process_make() {
 			RETVAL=$?
 			[ "${RETVAL}" -eq 0 ] && return 0
 			;;
+		"")
+			print_make_usage
+			return 0
+			;;
 		-h)
-			echo "${make_usage}" >&2
+			print_make_usage
 			return 0
 			;;
 		*)
@@ -77,13 +87,13 @@ process_make() {
 	esac
 }
 
-# initialize env
-BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
-. ${BASE_DIR}/common.sh
-
 case $1 in
+  "")
+		print_usage
+		exit 0
+		;;
 	-h)
-		echo "$usage"
+		print_usage
 		exit 0
 		;;
 	make)
@@ -94,8 +104,7 @@ case $1 in
 		[ "${RETVAL}" -eq 0 ] && exit 0
 		;;
 	*)
-		echo "illegal command: $@" >&2
-		echo "$usage" >&2
+		print_usage 1>&2
 		exit 1
 		;;
 esac
