@@ -49,19 +49,28 @@ EOF
 # create node
 create_node() {
 	HOSTNAME=$1
-	SIZE_ID=$2
+	SIZE=$2
 
 	# create node
-	${PYTHON} ${SBIN_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE_ID} -i ${OS_IMAGE} -r ${REGION}
+	${PYTHON} ${SBIN_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE} -i ${OS_IMAGE} -r ${REGION}
+	
+	# add to register
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add ${HOSTNAME} ${SIZE}
 }
 
 # register node
-register_node() {
-	CLUSTER_NAME=$1
-	HOSTNAME=$2
+format_node() {
+	HOSTNAME=$1
 
-	PRIVATE_HOSTS_PATH=${WORKING_DIR}/private-hosts
-	PUBLIC_HOSTS_PATH=${WORKING_DIR}/public-hosts
+	CURRENT_HOSTS_PATH=$(mktemp)
+	REGISTERED_HOSTS_PATH=$(mktemp)
+	UPDATED_HOSTS_PATH=$(mktemp)
+	
+	# get /etc/hosts entries which are not in registry. note: can be abstracted.
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} hosts ${REGISTERED_HOSTS_PATH}
+	cp /etc/hosts ${CURRENT_HOSTS_PATH}
+	grep -F -x -v -f ${REGISTERED_HOSTS_PATH} ${CURRENT_HOSTS_PATH} > ${UPDATED_HOSTS_PATH}
+	CURRENT_HOSTS_PATH=${UPDATED_HOSTS_PATH}
 
 	# acquire ip address
 	RESULT=$(${PYTHON} ${SBIN_DIR}/inspect.py ${CLIENT_ID} ${API_KEY} ${HOSTNAME})
@@ -77,12 +86,15 @@ register_node() {
 	# reset password
 	${SBIN_DIR}/init-${REGION}.ex ${PUBLIC_IP} ${TMP_PASSWORD} ${ROOT_PASSWORD} > /dev/null 2>&1
 
-	touch ${PRIVATE_HOSTS_PATH}
-	cp /etc/hosts ${PUBLIC_HOSTS_PATH}
+	# add to registry
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} format ${HOSTNAME} ${PUBLIC_IP} ${PRIVATE_IP}
 
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add ${PUBLIC_HOSTS_PATH} ${PRIVATE_HOSTS_PATH} ${CLUSTER_NAME} ${HOSTNAME} ${PUBLIC_IP} ${PRIVATE_IP}
+	# update /etc/hosts. note: can be abstracted.
+	REGISTERED_HOSTS_PATH=$(mktemp)
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} hosts ${REGISTERED_HOSTS_PATH}
+	cat ${REGISTERED_HOSTS_PATH} >> ${CURRENT_HOSTS_PATH}
+	sudo cp ${CURRENT_HOSTS_PATH} /etc/hosts
 
-	sudo mv ${PUBLIC_HOSTS_PATH} /etc/hosts
 	sudo service nscd restart > /dev/null 2>&1
 
 	# add ssh fingerprint (root)
@@ -98,66 +110,91 @@ register_node() {
 	apt-get update
 	apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
 ENDSSH
+}
+
+assign_to_namespace() {
+	NAMESPACE_NAME=$1
+	HOSTNAME=$2
 	
-	# update /etc/hosts (remote)
-	scp ${PRIVATE_HOSTS_PATH} root@${HOSTNAME}:/etc/hosts > /dev/null 2>&1
-	ssh -n root@${HOSTNAME} 'service nscd restart' > /dev/null 2>&1
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} namespace ${NAMESPACE_NAME} ${HOSTNAME}
+}
+
+assign_to_cluster() {
+	CLUSTER_NAME=$1
+	HOSTNAME=$2
+	
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} cluster ${CLUSTER_NAME} ${HOSTNAME}
+}
+
+setup_hosts() {
+	NAMESPACE_NAME=$1
+	
+	HOSTS_PATH=$(mktemp)
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} private ${HOSTS_PATH} ${NAMESPACE_NAME}
+	
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} nslist ${NAMESPACE_NAME})
+	HOSTNAMES=( ${RESULT} )
+	
+	for HOSTNAME in ${HOSTNAMES[@]}
+	do
+		# update /etc/hosts
+		scp ${HOSTS_PATH} root@${HOSTNAME}:/etc/hosts # > /dev/null 2>&1
+		ssh -n root@${HOSTNAME} 'service nscd restart' # > /dev/null 2>&1
+	done
 }
 
 # unregister node
 unregister_node() {
-	CLUSTER_NAME=$1
-	HOSTNAME=$2
+	HOSTNAME=$1
 
 	# remove ssh fingerprint
 	PUBLIC_IP=$(getent hosts ${HOSTNAME} | awk '{print $1}')
 	ssh-keygen -R ${PUBLIC_IP}
 	ssh-keygen -R ${HOSTNAME}
-
-	PRIVATE_HOSTS_PATH=${BASE_DIR}/private-hosts
-	PUBLIC_HOSTS_PATH=${BASE_DIR}/public-hosts
-	
-	if [ ! -f ${REGISTRY_PATH} ]
-	then
-		echo "registry file does not exist."
-		exit 1
-	fi
-
-	cp /etc/hosts ${PUBLIC_HOSTS_PATH}
-
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} remove ${PUBLIC_HOSTS_PATH} ${PRIVATE_HOSTS_PATH} ${HOSTNAME}
-
-	sudo mv ${PUBLIC_HOSTS_PATH} /etc/hosts
-	sudo service nscd restart > /dev/null 2>&1
 }
 
 # destroy node
 destroy_node() {
-	HOSTNAME=$3
+	HOSTNAME=$1
 	
+	# remove from registry
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} remove ${HOSTNAME}
+	
+	# destroy droplet
 	${PYTHON} ${SBIN_DIR}/destroy.py -c ${CLIENT_ID} -k ${API_KEY} -n ${HOSTNAME}
-}
-
-# unregister and destroy
-unregister_and_destroy() {
-	CLUSTER_NAME=$1
-	HOSTNAME=$2
-	
-	unregister_node ${CLUSTER_NAME} ${HOSTNAME}
-	destroy_node ${CLIENT_ID} ${API_KEY} ${HOSTNAME}
 }
 
 # unregister and destroy
 unregister_and_destroy_cluster() {
 	CLUSTER_NAME=$1
+
+	CURRENT_HOSTS_PATH=$(mktemp)
+	REGISTERED_HOSTS_PATH=$(mktemp)
+	UPDATED_HOSTS_PATH=$(mktemp)
+
+	# get /etc/hosts entries which are not in registry. note: can be abstracted.
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} hosts ${REGISTERED_HOSTS_PATH}
+	cp /etc/hosts ${CURRENT_HOSTS_PATH}
+	grep -F -x -v -f ${REGISTERED_HOSTS_PATH} ${CURRENT_HOSTS_PATH} > ${UPDATED_HOSTS_PATH}
+	CURRENT_HOSTS_PATH=${UPDATED_HOSTS_PATH}
 	
+	# unregister and destroy
 	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
-	
+
 	for HOSTNAME in ${HOSTNAMES[@]}
 	do
-		unregister_and_destroy ${CLUSTER_NAME} ${HOSTNAME}
+		unregister_node ${HOSTNAME}
+		destroy_node ${HOSTNAME}
 	done
+
+	# update /etc/hosts. note: can be abstracted.
+	REGISTERED_HOSTS_PATH=$(mktemp)
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} hosts ${REGISTERED_HOSTS_PATH}
+	cat ${REGISTERED_HOSTS_PATH} >> ${CURRENT_HOSTS_PATH}
+	sudo cp ${CURRENT_HOSTS_PATH} /etc/hosts
+
+	sudo service nscd restart > /dev/null 2>&1
 }
 
 # configure hadoop slave node.
@@ -214,38 +251,14 @@ ENDSSH
 	rm hadoop-${HADOOP_VERSION}-bin.tar.gz
 	cp /usr/local/lib/libsnappy.so ~/opt/hadoop/lib/native/Linux-amd64-64/
 ENDSSH
-}
-
-configure_hadoop_slave_all() {
-	CLUSTER_NAME=$1
 	
-	# configure slaves
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list ${CLUSTER_NAME})
-	HOSTNAMES=( ${RESULT} )
-	
-	PID_LIST=""
-	for HOSTNAME in ${HOSTNAMES[@]}
-	do
-		configure_hadoop_slave ${HOSTNAME} &
-		PID_LIST=${PID_LIST}' '$!
-	done
-	
-	${PYTHON} - ${PID_LIST} << 'EOF'
-#!/usr/bin/python3
-
-import sys, psutil
-
-def main():
-	waitfor = set([ int(pid) for pid in sys.argv[1:] ])
-
-	while waitfor:
-		waitfor.intersection_update(set(psutil.get_pid_list()))
-
-	return 0;
-
-if __name__ == "__main__":
-	sys.exit(main())
-EOF
+	# copy settings
+	scp ${WORKING_DIR}/hadoop-env.sh ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/ # > /dev/null 2>&1
+	scp ${WORKING_DIR}/core-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
+	scp ${WORKING_DIR}/mapred-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
+	scp ${WORKING_DIR}/hdfs-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
+	scp ${WORKING_DIR}/masters ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
+	scp ${WORKING_DIR}/slaves ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
 }
 
 # generate hadoop settings
@@ -277,6 +290,7 @@ generate_hadoop_settings() {
 	echo "${MASTER_HOSTNAME}" > ${WORKING_DIR}/masters
 
 	# create slaves
+	touch ${WORKING_DIR}/slaves
 	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
@@ -284,6 +298,48 @@ generate_hadoop_settings() {
 	do
 		echo ${HOSTNAME} >> ${WORKING_DIR}/slaves
 	done
+}
+
+configure_hadoop_slave_all() {
+	CLUSTER_NAME=$1
+	MASTER_HOSTNAME=$2
+	
+	generate_hadoop_settings ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+	
+	# configure slaves
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list ${CLUSTER_NAME})
+	HOSTNAMES=( ${RESULT} )
+	
+	PID_LIST=""
+	for HOSTNAME in ${HOSTNAMES[@]}
+	do
+		configure_hadoop_slave ${HOSTNAME} &
+		PID_LIST=${PID_LIST}' '$!
+	done
+	
+	${PYTHON} - ${PID_LIST} << 'EOF'
+#!/usr/bin/python3
+
+import sys, psutil
+
+def main():
+	waitfor = set([ int(pid) for pid in sys.argv[1:] ])
+
+	while waitfor:
+		waitfor.intersection_update(set(psutil.get_pid_list()))
+
+	return 0;
+
+if __name__ == "__main__":
+	sys.exit(main())
+EOF
+
+	rm ${WORKING_DIR}/hadoop-env.sh
+	rm ${WORKING_DIR}/core-site.xml
+	rm ${WORKING_DIR}/mapred-site.xml
+	rm ${WORKING_DIR}/hdfs-site.xml
+	rm ${WORKING_DIR}/masters
+	rm ${WORKING_DIR}/slaves
 }
 
 # configure hadoop master node.
@@ -301,9 +357,9 @@ configure_hadoop_master() {
 ENDSSH
 
 	# configure tools
-	ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} 'mkdir ~/bin'
-	scp ${SBIN_DIR}/copy-ssh-first.ex ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
-	scp ${SBIN_DIR}/distconf ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
+	ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} 'mkdir -p ~/bin'
+	scp ${SBIN_DIR}/copy-ssh-first.ex ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
+	scp ${SBIN_DIR}/distconf ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
 	# scp ${SBIN_DIR}/mappercount ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
 	# scp ${SBIN_DIR}/reducercount ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
 	
@@ -312,25 +368,7 @@ ENDSSH
 	echo "export HADOOP_INSTALL=~/opt/hadoop" >> ~/.bashrc
 	echo 'export PATH=\${PATH}:~/bin:\${HADOOP_INSTALL}/bin' >> ~/.bashrc
 ENDSSH
-	
-	# generate settings
-	generate_hadoop_settings ${REGISTRY_PATH} ${CLUSTER_NAME} ${HOSTNAME}
-	
-	# copy settings
-	scp ${WORKING_DIR}/hadoop-env.sh ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/ # > /dev/null 2>&1
-	scp ${WORKING_DIR}/core-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/mapred-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/hdfs-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/masters ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/slaves ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	
-	rm ${WORKING_DIR}/hadoop-env.sh
-	rm ${WORKING_DIR}/core-site.xml
-	rm ${WORKING_DIR}/mapred-site.xml
-	rm ${WORKING_DIR}/hdfs-site.xml
-	rm ${WORKING_DIR}/masters
-	rm ${WORKING_DIR}/slaves
-	
+
 	# configure ssh key
 	ssh ${REMOTE_HOST_USER}@${HOSTNAME} 'bash -s' <<ENDSSH
 	while read SLAVE_HOSTNAME
@@ -339,7 +377,4 @@ ENDSSH
 		ssh-keyscan -H \${SLAVE_HOSTNAME} >> \${HOME}/.ssh/known_hosts
 	done < \${HOME}/opt/hadoop/conf/slaves
 ENDSSH
-
-	# distribute settings
-	ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} '~/bin/distconf'
 }

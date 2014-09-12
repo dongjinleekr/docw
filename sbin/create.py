@@ -13,6 +13,13 @@ from dopy.manager import DoManager
 
 IMAGE_ID_MAP = { 'ubuntu-14.04': 5141286 }
 REGION_ID_MAP = { 'nyc2': 4, 'sgp1': 6 }
+SIZE_ID_MAP = {
+	2: 62,
+	4: 65,
+	8: 61,
+	12: 60,
+	16: 70,
+}
 
 def main():
 	parser = argparse.ArgumentParser(description='')
@@ -27,7 +34,7 @@ def main():
 	args = vars(parsed)
 
 	hostname = args['hostname']
-	size = args['node_size']
+	size = SIZE_ID_MAP[args['node_size']]
 	image_id = IMAGE_ID_MAP[args['image']]
 	region_id = REGION_ID_MAP[args['region']]
 

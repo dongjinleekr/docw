@@ -12,6 +12,8 @@ print_usage() {
   echo ""
   echo "  where command is one of:"
   echo "    make                 create node(s)"
+  echo "    format               format node(s)"
+  echo "    set                  configure node(s)"
   echo "    rm                   remove node(s)"
   echo ""
   echo "  All commands print help when invoked without parameters, or with -h"
@@ -25,9 +27,33 @@ print_make_usage() {
   echo "  where options are one of:"
   echo "    node <hostname> <size>   create node sized <size> and named <hostname>"
   echo "    nodes <count> <size>     create <count> nodes at once, sized <size>. hostnames are assigned automatically."
+  echo "    cluster <name> <hostname>*   create cluster <name> with given hosts."
   echo ""
   echo "  <size> is specified by the number of cores of desired node size."
   echo "  For details, please refer https://www.digitalocean.com/pricing/"
+  echo ""
+}
+
+print_format_usage() {
+  echo ""
+  echo "Usage: docw format [<options>]"
+  echo ""
+  echo "  where options are one of:"
+  echo "    <hostname>*              format all given nodes."
+  echo ""
+  echo "  The format process includes:"
+  echo "    1. configure given node's root password."
+  echo "    2. Add the node to /etc/hosts."
+  echo "    3. setup password-less login with the node."
+  echo ""
+}
+
+print_set_usage() {
+  echo ""
+  echo "Usage: docw set <clustername> <role> [<options>]"
+  echo ""
+  echo "  where role are one of:"
+  echo "    hadoop                   setup hadoop cluster. namenode hostname should be given as an option."
   echo ""
 }
 
@@ -52,8 +78,8 @@ make_node() {
 make_nodes() {
 	[ "$#" -eq 2 ] || return 1
 	
-	NODECOUNT=$1
-	SIZE=$2
+	SIZE=$1
+	NODECOUNT=$2
 
 	ID_START=$(cat ${ID_SEQUENCE_PATH})
 	ID_END=$((${ID_START} + ${NODECOUNT} - 1))
@@ -71,6 +97,18 @@ make_nodes() {
 	
 	wait_all ${PID_LIST}
 
+	return 0
+}
+
+setup_hadoop_cluster() {
+	[ "$#" -eq 2 ] || return 1
+	
+	CLUSTER_NAME=$1
+	MASTER_HOSTNAME=$2
+	
+	configure_hadoop_slave_all ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+	configure_hadoop_master ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+	
 	return 0
 }
 
@@ -101,12 +139,76 @@ process_make() {
 			RETVAL=$?
 			[ "${RETVAL}" -eq 0 ] && return 0
 			;;
+		cluster)
+			CLUSTER_NAME=$1
+			shift 1
+			
+			for HOSTNAME in $@
+			do
+				assign_to_namespace ${CLUSTER_NAME} ${HOSTNAME}
+				assign_to_cluster ${CLUSTER_NAME} ${HOSTNAME}
+				setup_hosts ${CLUSTER_NAME}
+			done
+		
+			RETVAL=$?
+			[ "${RETVAL}" -eq 0 ] && return 0
+			;;
 		"")
 			print_make_usage
 			return 0
 			;;
 		-h)
 			print_make_usage
+			return 0
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+process_format() {
+	
+	case $1 in
+		"--all")
+			echo 'not implemented yet'
+			;;
+		"")
+			print_format_usage
+			return 0
+			;;
+		-h)
+			print_format_usage
+			return 0
+			;;
+		*)
+			for HOSTNAME in $@
+			do
+				format_node ${HOSTNAME}
+			done
+	
+			return 0
+			;;
+	esac
+}
+
+process_set() {
+	COMMAND=$1
+	shift 1
+	
+	case $COMMAND in
+		hadoop)
+			setup_hadoop_cluster $@
+		
+			RETVAL=$?
+			[ "${RETVAL}" -eq 0 ] && return 0
+			;;
+		"")
+			print_set_usage
+			return 0
+			;;
+		-h)
+			print_set_usage
 			return 0
 			;;
 		*)
@@ -152,6 +254,20 @@ case $1 in
 	make)
 		shift 1
 		process_make $@
+		
+		RETVAL=$?
+		[ "${RETVAL}" -eq 0 ] && exit 0
+		;;
+	format)
+		shift 1
+		process_format $@
+		
+		RETVAL=$?
+		[ "${RETVAL}" -eq 0 ] && exit 0
+		;;
+	set)
+		shift 1
+		process_set $@
 		
 		RETVAL=$?
 		[ "${RETVAL}" -eq 0 ] && exit 0
