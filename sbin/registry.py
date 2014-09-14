@@ -11,7 +11,7 @@ def load_registry(f):
 	try:
 		return json.load(f)
 	except Exception as e:
-		return { 'entries': [] }
+		return { 'clusters': [], 'entries': [] }
 	
 def save_registry(f, registry):
 	f.seek(0)
@@ -100,6 +100,127 @@ def add_host(registry, hostname, size):
 		os.remove(registry)
 		with open(registry, "w") as f:
 			save_registry(f, data)
+
+	except Exception as e:
+		print(e)
+		return 1
+
+	return 0
+
+def create_cluster(registry, cluster):
+
+	try:
+		# read registry
+		with open(registry, "r+") as f:
+			data = load_registry(f)
+
+		# add cluster
+		# todo: 같은 이름이 있는지 미리 체크.
+		data['clusters'].append({ 'name': cluster })
+		
+		os.remove(registry)
+		with open(registry, "w") as f:
+			save_registry(f, data)
+
+	except Exception as e:
+		print(e)
+		return 1
+
+	return 0
+
+def set_cluster_role(registry, cluster, role):
+
+	try:
+		# read registry
+		with open(registry, "r+") as f:
+			data = load_registry(f)
+
+		# add host
+		e = next((entry for entry in data['clusters'] if entry['name'] == cluster), None)
+		
+		if e and any(entry['cluster'] == cluster for entry in data['entries']) and role in { 'hadoop' }:
+			e['role'] = role
+		else:
+			raise ValueError
+		
+		os.remove(registry)
+		with open(registry, "w") as f:
+			save_registry(f, data)
+
+	except Exception as e:
+		print(e)
+		return 1
+
+	return 0
+
+def display_all_clusters_info(registry):
+	try:
+		# read registry
+		with open(registry, "r+") as f:
+			data = load_registry(f)
+	
+		clusters = [ entry['name'] for entry in data['clusters'] if 'cluster' in entry ]
+		
+		print('%d clusters exist.' % len(clusters))
+		print()
+		
+		for cluster in clusters:
+			display_cluster_info(registry, cluster)
+			print()
+		
+		display_unassigned_hosts(registry)
+
+	except Exception as e:
+		print(e)
+		return 1
+
+	return 0
+
+def display_cluster_info(registry, cname):
+	"""
+		show information of specified cluster.
+	"""
+
+	try:
+		# read registry
+		with open(registry, "r+") as f:
+			data = load_registry(f)
+			
+		# find cluster
+		cluster = next(( c['name'] for c in data['clusters'] if 'name' in c and c['name'] == cname), None)
+	
+		if cluster:
+		
+			# collect all nodes
+			hosts = [ entry['hostname'] for entry in data['entries'] if 'cluster' in entry and entry['cluster'] == cluster ]
+			
+			if 'role' in cluster:
+				print('Cluster %s: %s, %d nodes' % (cluster['name'], cluster['role'], len(hosts)))
+			else:
+				print('Cluster %s: No role specified, %d nodes' % (cluster['name'], len(hosts)))
+			
+			print('  ' + ', '.join(hosts))
+		else:
+			raise ValueError('cluster %s does not exist' % cname)
+
+	except Exception as e:
+		print(e)
+		return 1
+
+	return 0
+	
+def display_unassigned_hosts(registry):
+
+	try:
+		# read registry
+		with open(registry, "r+") as f:
+			data = load_registry(f)
+	
+		# collect all unassigned nodes
+		hosts = [ entry['hostname'] for entry in data['entries'] if 'cluster' not in entry or entry['cluster'] == cluster ]
+		
+		print('Unassigned: %d' % len(hosts))
+		print('  ' + ', '.join(hosts))
 
 	except Exception as e:
 		print(e)
@@ -240,6 +361,18 @@ def main():
 		hostname = sys.argv[3]
 		size = int(sys.argv[4])
 		add_host(registry, hostname, size)
+	elif 'create_cluster' == sys.argv[2] and 4 == len(sys.argv):
+		cluster = sys.argv[3]
+		create_cluster(registry, cluster)
+	elif 'set' == sys.argv[2] and 5 == len(sys.argv):
+		cluster = sys.argv[3]
+		role = sys.argv[4]
+		set_cluster_role(registry, cluster, role)
+	elif 'ls' == sys.argv[2] and 4 == len(sys.argv):
+		if '--all' == sys.argv[3]:
+			display_all_clusters_info(registry)
+		else:
+			display_cluster_info(registry, sys.argv[3])
 	elif 'format' == sys.argv[2] and 6 == len(sys.argv):
 		hostname = sys.argv[3]
 		public_ip = sys.argv[4]

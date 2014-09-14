@@ -46,6 +46,25 @@ if __name__ == "__main__":
 EOF
 }
 
+set_cluster_role() {
+	CLUSTER_NAME=$1
+	ROLE=$2
+	
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} set ${CLUSTER_NAME} ${ROLE}
+}
+
+# 
+display_all_clusters_info() {
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} ls --all
+}
+
+#
+display_cluster_info() {
+	CLUSTER_NAME=$1
+	
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} ls ${CLUSTER_NAME}
+}
+
 # create node
 create_node() {
 	HOSTNAME=$1
@@ -123,6 +142,7 @@ assign_to_cluster() {
 	CLUSTER_NAME=$1
 	HOSTNAME=$2
 	
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} create_cluster ${CLUSTER_NAME}
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} cluster ${CLUSTER_NAME} ${HOSTNAME}
 }
 

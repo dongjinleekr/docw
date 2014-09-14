@@ -11,12 +11,23 @@ print_usage() {
   echo "Usage: docw [<command>] [<options>]"
   echo ""
   echo "  where command is one of:"
+  echo "    ls                   display current status."
   echo "    make                 create node(s)"
   echo "    format               format node(s)"
   echo "    set                  configure node(s)"
   echo "    rm                   remove node(s)"
   echo ""
   echo "  All commands print help when invoked without parameters, or with -h"
+  echo ""
+}
+
+print_ls_usage() {
+  echo ""
+  echo "Usage: docw ls [<options>]"
+  echo ""
+  echo "  where options are one of:"
+  echo "    <cluster>            display <cluster>'s information."
+  echo "    --all                display all clusters' and nodes' information."
   echo ""
 }
 
@@ -122,6 +133,35 @@ rm_cluster() {
 	return 0
 }
 
+process_ls() {
+
+	case $1 in
+		"--all")
+			display_all_clusters_info
+		
+			RETVAL=$?
+			[ "${RETVAL}" -eq 0 ] && return 0
+			;;
+		"")
+			print_ls_usage
+			return 0
+			;;
+		-h)
+			print_ls_usage
+			return 0
+			;;
+		*)
+			CLUSTER_NAME=$1
+			display_cluster_info ${CLUSTER_NAME}
+			
+			RETVAL=$?
+			[ "${RETVAL}" -eq 0 ] && return 0
+			;;
+	esac
+	
+	return 1
+}
+
 process_make() {
 	COMMAND=$1
 	shift 1
@@ -201,7 +241,12 @@ process_set() {
 			setup_hadoop_cluster $@
 		
 			RETVAL=$?
-			[ "${RETVAL}" -eq 0 ] && return 0
+			if [ "${RETVAL}" -eq 0 ]; then
+				set_cluster_role $1 hadoop
+				return 0
+			else
+				return 1
+			fi
 			;;
 		"")
 			print_set_usage
@@ -226,7 +271,12 @@ process_rm() {
 			rm_cluster $@
 		
 			RETVAL=$?
-			[ "${RETVAL}" -eq 0 ] && return 0
+			# todo: remove from registry
+			# if [ "${RETVAL}" -eq 0 ]; then
+			# else
+			# fi
+			
+			return 0
 			;;
 		"")
 			print_rm_usage
@@ -250,6 +300,13 @@ case $1 in
 	-h)
 		print_usage
 		exit 0
+		;;
+	ls)
+		shift 1
+		process_ls $@
+		
+		RETVAL=$?
+		[ "${RETVAL}" -eq 0 ] && exit 0
 		;;
 	make)
 		shift 1
