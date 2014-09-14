@@ -1,10 +1,6 @@
 #!/usr/bin/python3
 
 import os, sys, json
-import shutil
-import tempfile
-
-from contextlib import closing
 
 def load_registry(regFile):
 	"""
