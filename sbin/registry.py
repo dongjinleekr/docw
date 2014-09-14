@@ -2,62 +2,101 @@
 
 import os, sys, json
 import shutil
-import copy
 import tempfile
 
 from contextlib import closing
 
-def load_registry(f):
+def load_registry(regFile):
+	"""
+		Read registry status from rfile. If it does not exist, creates it.
+		
+		Args:
+		  @type regFile: File
+		  @param regFile: Registry file
+		  
+		Returns:
+		  @return: dict
+	"""
 	try:
-		return json.load(f)
+		return json.load(regFile)
 	except Exception as e:
 		return { 'clusters': [], 'entries': [] }
 	
-def save_registry(f, registry):
-	f.seek(0)
-	f.write(json.dumps(registry, indent=2))
+def save_registry(regFile, regData):
+	"""
+		Write registry status to given file.
+	"""
+	regFile.write(json.dumps(regData, indent=2))
 
-def add_host_entry(data, hostname, size):
-	if any(entry['hostname'] == hostname for entry in data['entries']):
-		raise ValueError('Duplicated hostname')
+def add_host(regStatus, hostname, size):
+	if any(e['hostname'] == hostname for e in regStatus['entries']):
+		raise ValueError('host named %s already exists' % hostname)
 	else:
-		ret = copy.deepcopy(data)
-		ret['entries'].append({ 'hostname': hostname, 'size': size })
-		return ret
+		# todo: entries -> hosts
+		# todo: hostname -> name
+		regStatus['entries'].append({ 'hostname': hostname, 'size': size })
 
-def is_formatted(host):
-	if 'public' in host and 'private' in host:
+def add_cluster(regStatus, clustername):
+		# todo: 같은 이름이 있는지 미리 체크.
+		regStatus['clusters'].append({ 'name': cluster })
+
+def display_all_clusters_info(regStatus):	
+	clusters = [ c['name'] for c in regStatus['clusters'] if 'cluster' in c ]
+	
+	print('Currently, %d clusters exist.' % len(clusters))
+	print()
+	
+	for cluster in clusters:
+		display_cluster_info(regStatus, cluster)
+		print()
+	
+	display_unassigned_hosts(regStatus)
+
+def display_cluster_info(regStatus, clustername):
+	"""
+		Show information of specified cluster.
+	"""
+
+	# find cluster
+	cluster = next(( c['name'] for c in regStatus['clusters'] if 'name' in c and c['name'] == clustername), None)
+
+	if cluster:	
+		# all hosts in given cluster
+		hosts = [ e['hostname'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]
+		
+		if 'role' in cluster:
+			print('Cluster %s: %s cluster, %d nodes.' % (cluster['name'], cluster['role'], len(hosts)))
+		else:
+			print('Cluster %s: No role specified, %d nodes.' % (cluster['name'], len(hosts)))
+		
+		print('  ' + ', '.join(hosts))
+	else:
+		raise ValueError('Cluster %s does not exist' % clustername)
+
+def display_unassigned_hosts(regStatus):
+	# collect all unassigned nodes
+	hosts = [ e['hostname'] for e in regStatus['entries'] if 'cluster' not in e or e['cluster'] == '' ]
+	
+	print('Unassigned: %d nodes.' % len(hosts))
+	print('  ' + ', '.join(hosts))
+
+def ip_address_assigned(host):
+	p1 = host.get('public', '')
+	p2 = host.get('private', '')
+
+	if p1 and p2:
 		return True
 	else:
 		return False
 
-def format_host_entry(data, hostname, public_ip, private_ip):
+def write_public_hosts_entries(regStatus, hostsPath):
 	"""
-		add public ip, private ip into given hostname. If host with given hostname does not exist
-		in registry or it already has public ip and private ip(already formatted), raise ValueError.
+		Write public ip - hostname mapping of each formatted host, to given path.
 	"""
-	host = next((entry for entry in data['entries'] if entry['hostname'] == hostname), None)
-	
-	if host:
-		if not is_formatted(host):
-			host['public'] = public_ip
-			host['private'] = private_ip
-
-			return data
-		else:
-			raise ValueError('already formatted')
-	else:
-		raise ValueError('host does not exist')
-
-def remove_host_entry(data, hostname):
-	ret = copy.deepcopy(data)
-	e = next((entry for entry in ret['entries'] if entry['hostname'] == hostname), None)
-	
-	if e:
-		ret['entries'].remove(e)
-		return ret
-	else:
-		raise ValueError('Duplicated hostname')
+	with open(hostsPath, "w+") as f:
+		for host in (e for e in regStatus['entries']):
+			if ip_address_assigned(host):
+				f.write('{ip}\t{hostname}\n'.format(hostname = host['hostname'], ip = host['public']))
 
 PRIVATE_HOSTS_TEMPLATE = '''127.0.0.1	localhost
 
@@ -70,344 +109,278 @@ ff02::2 ip6-allrouters
 
 '''
 
-def generate_private_hosts(registry, hosts, namespace):
+def write_private_hosts(regStatus, hostsPath, nname):
 	"""
-		generate hosts file for given namespace
-		
-		Returns:
-			path to generated file
+		Write hosts file for given namespace, to given path.
 	"""
-	# read registry
-	with open(registry, "r+") as f:
-		data = load_registry(f)
+	with open(hostsPath, "w+") as f:
+		f.write(PRIVATE_HOSTS_TEMPLATE)
+		
+		for host in (e for e in regStatus['entries'] if 'namespace' in e and e['namespace'] == nname):
+			f.write('{ip}\t{hostname}\n'.format(hostname = host['hostname'], ip = host['private']))
+
+def assign_ip_address(regStatus, hostname, public_ip, private_ip):
+	"""
+		Add public ip, private ip into given hostname. If host with given hostname does not exist
+		in registry or it already has public ip or private ip, raise ValueError.
+	"""
+	host = next((e for e in regStatus['entries'] if e['hostname'] == hostname), None)
 	
-	with open(hosts, "w+") as g:
-		g.write(PRIVATE_HOSTS_TEMPLATE)
-		
-		for entry in (entry for entry in data['entries'] if 'namespace' in entry and entry['namespace'] == namespace):
-			g.write('{ip}\t{hostname}\n'.format(hostname = entry['hostname'], ip = entry['private']))
-
-def add_host(registry, hostname, size):
-
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-	
-		# add host
-		data = add_host_entry(data, hostname, size)
-		
-		os.remove(registry)
-		with open(registry, "w") as f:
-			save_registry(f, data)
-
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def create_cluster(registry, cluster):
-
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-
-		# add cluster
-		# todo: 같은 이름이 있는지 미리 체크.
-		data['clusters'].append({ 'name': cluster })
-		
-		os.remove(registry)
-		with open(registry, "w") as f:
-			save_registry(f, data)
-
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def set_cluster_role(registry, cluster, role):
-
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-
-		# add host
-		e = next((entry for entry in data['clusters'] if entry['name'] == cluster), None)
-		
-		if e and any(entry['cluster'] == cluster for entry in data['entries']) and role in { 'hadoop' }:
-			e['role'] = role
+	if host:
+		if not ip_address_assigned(host):
+			host['public'] = public_ip
+			host['private'] = private_ip
 		else:
-			raise ValueError
-		
-		os.remove(registry)
-		with open(registry, "w") as f:
-			save_registry(f, data)
+			raise ValueError('IP addresses already assigned: %s' % hostname)
+	else:
+		raise ValueError('host %s does not exist' % hostname)
 
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def display_all_clusters_info(registry):
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-	
-		clusters = [ entry['name'] for entry in data['clusters'] if 'cluster' in entry ]
-		
-		print('%d clusters exist.' % len(clusters))
-		print()
-		
-		for cluster in clusters:
-			display_cluster_info(registry, cluster)
-			print()
-		
-		display_unassigned_hosts(registry)
-
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def display_cluster_info(registry, cname):
-	"""
-		show information of specified cluster.
-	"""
-
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-			
-		# find cluster
-		cluster = next(( c['name'] for c in data['clusters'] if 'name' in c and c['name'] == cname), None)
-	
-		if cluster:
-		
-			# collect all nodes
-			hosts = [ entry['hostname'] for entry in data['entries'] if 'cluster' in entry and entry['cluster'] == cluster ]
-			
-			if 'role' in cluster:
-				print('Cluster %s: %s, %d nodes' % (cluster['name'], cluster['role'], len(hosts)))
-			else:
-				print('Cluster %s: No role specified, %d nodes' % (cluster['name'], len(hosts)))
-			
-			print('  ' + ', '.join(hosts))
-		else:
-			raise ValueError('cluster %s does not exist' % cname)
-
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-	
-def display_unassigned_hosts(registry):
-
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-	
-		# collect all unassigned nodes
-		hosts = [ entry['hostname'] for entry in data['entries'] if 'cluster' not in entry or entry['cluster'] == cluster ]
-		
-		print('Unassigned: %d' % len(hosts))
-		print('  ' + ', '.join(hosts))
-
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def format_host(registry, hostname, public_ip, private_ip):
-
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-	
-		# format host
-		data = format_host_entry(data, hostname, public_ip, private_ip)
-		
-		os.remove(registry)
-		with open(registry, "w") as f:
-			save_registry(f, data)
-
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def dump_hosts(registry, hosts):
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-		
-		with open(hosts, "w+") as g:
-			for entry in (entry for entry in data['entries']):
-				if is_formatted(entry):
-					g.write('{ip}\t{hostname}\n'.format(hostname = entry['hostname'], ip = entry['public']))
-
-def add_to_namespace(registry, hostname, namespace):
+def assign_to_namespace(regStatus, nsname, hostname):
 	"""
 		assign a namespace into host with given hostname
 	"""
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-			
-		host = next((entry for entry in data['entries'] if entry['hostname'] == hostname), None)
-	
-		if host:
-			if is_formatted(host):
-				host['namespace'] = namespace
-			else:
-				raise ValueError('not formatted')
+	host = next((e for e in regStatus['entries'] if e['hostname'] == hostname), None)
+
+	if host:
+		if ip_address_assigned(host):
+			host['namespace'] = nsname
 		else:
-			raise ValueError('host does not exist')
-		
-		os.remove(registry)
-		with open(registry, "w") as f:
-			save_registry(f, data)
+			raise ValueError('IP addresses not assigned yet: %s' % hostname)
+	else:
+		raise ValueError('host %s does not exist' % hostname)
 
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def add_to_cluster(registry, hostname, cluster):
+def assign_to_cluster(regStatus, clustername, hostname):
 	"""
 		assign a namespace into host with given hostname 
 	"""
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
-			
-		host = next((entry for entry in data['entries'] if entry['hostname'] == hostname), None)
-	
-		if host:
-			if is_formatted(host):
-				host['cluster'] = cluster
-			else:
-				raise ValueError('not formatted')
+	host = next((e for e in regStatus['entries'] if e['hostname'] == hostname), None)
+
+	if host:
+		if ip_address_assigned(host):
+			host['cluster'] = clustername
 		else:
-			raise ValueError('host does not exist')
+			raise ValueError('IP addresses not assigned yet: %s' % hostname)
+	else:
+		raise ValueError('host %s does not exist' % hostname)
+
+def assign_role(regStatus, clustername, role):
+	cluster = next((c for c in regStatus['clusters'] if c['name'] == clustername), None)
+	
+	if clustername:
+		if any(e['cluster'] == clustername for e in regStatus['entries']):
+			if role in { 'hadoop' }:
+				cluster['role'] = role
+			else:
+				raise ValueError('Invalid role: %s' % role)
+		else:
+			raise ValueError('No host assigned to cluster %s' % clustername)
+	else:
+		raise ValueError('cluster %s does not exist' % clustername)
 		
-		os.remove(registry)
-		with open(registry, "w") as f:
-			save_registry(f, data)
-
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-
-def remove_host(registry, hostname):
-
-	try:
-		# read registry
-		with open(registry, "r+") as f:
-			data = load_registry(f)
+def list_cluster_hosts(regStatus, clustername):
+	print('\t'.join([ e['hostname'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]))
 		
-		# remove registry
-		data = remove_host_entry(data, hostname)
-		
-		os.remove(registry)
-		with open(registry, "w") as f:
-			save_registry(f, data)
+def list_namespace_hosts(regStatus, nsname):
+	print('\t'.join([ e['hostname'] for e in regStatus['entries'] if 'cluster' in e and e['namespace'] == nsname ]))
 
-	except Exception as e:
-		print(e)
-		return 1
-
-	return 0
-		
-def list_hosts(registry, cluster):
-	with open(registry, "r+") as f:
-		data = load_registry(f)
-		print('\t'.join([ entry['hostname'] for entry in data['entries'] if 'cluster' in entry and entry['cluster'] == cluster ]))
-		
-def list_namespace_hosts(registry, namespace):
-	with open(registry, "r+") as f:
-		data = load_registry(f)
-		print('\t'.join([ entry['hostname'] for entry in data['entries'] if 'cluster' in entry and entry['namespace'] == namespace ]))
-
-def minsize(registry, cluster):
-	with open(registry, "r+") as f:
-		data = load_registry(f)
-		
-	sizes = [ entry['size'] for entry in data['entries'] \
-						if 'cluster' in entry and entry['cluster'] == cluster ]
+def minsize(regStatus, clustername):
+	sizes = [ e['size'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]
 	print(min(sizes))
 
-def main():
-	registry = sys.argv[1]
+def remove_host(regStatus, hostname):
+	host = next((e for e in regStatus['entries'] if e['hostname'] == hostname), None)
 	
-	if 'add' == sys.argv[2] and 5 == len(sys.argv):
-		hostname = sys.argv[3]
-		size = int(sys.argv[4])
-		add_host(registry, hostname, size)
-	elif 'create_cluster' == sys.argv[2] and 4 == len(sys.argv):
-		cluster = sys.argv[3]
-		create_cluster(registry, cluster)
-	elif 'set' == sys.argv[2] and 5 == len(sys.argv):
-		cluster = sys.argv[3]
-		role = sys.argv[4]
-		set_cluster_role(registry, cluster, role)
-	elif 'ls' == sys.argv[2] and 4 == len(sys.argv):
-		if '--all' == sys.argv[3]:
-			display_all_clusters_info(registry)
-		else:
-			display_cluster_info(registry, sys.argv[3])
-	elif 'format' == sys.argv[2] and 6 == len(sys.argv):
-		hostname = sys.argv[3]
-		public_ip = sys.argv[4]
-		private_ip = sys.argv[5]
-		format_host(registry, hostname, public_ip, private_ip)
-	elif 'hosts' == sys.argv[2] and 4 == len(sys.argv):	# list all hosts
-		hosts = sys.argv[3]
-		dump_hosts(registry, hosts)
-	elif 'private' == sys.argv[2] and 5 == len(sys.argv):
-		hosts = sys.argv[3]
-		namespace = sys.argv[4]
-		generate_private_hosts(registry, hosts, namespace)
-	elif 'namespace' == sys.argv[2] and 5 == len(sys.argv):
-		namespace = sys.argv[3]
-		hostname = sys.argv[4]
-		add_to_namespace(registry, hostname, namespace)
-	elif 'cluster' == sys.argv[2] and 5 == len(sys.argv):
-		cluster = sys.argv[3]
-		hostname = sys.argv[4]
-		add_to_cluster(registry, hostname, cluster)
-	elif 'remove' == sys.argv[2] and 4 == len(sys.argv):
-		hostname = sys.argv[3]
-		remove_host(registry, hostname)
-	elif 'nslist' == sys.argv[2] and 4 == len(sys.argv):
-		namespace = sys.argv[3]
-		list_namespace_hosts(registry, namespace)
-	elif 'list' == sys.argv[2] and 4 == len(sys.argv):
-		cluster = sys.argv[3]
-		list_hosts(registry, cluster)
-	elif 'minsize' == sys.argv[2] and 4 == len(sys.argv):
-		cluster = sys.argv[3]
-		minsize(registry, cluster)
+	if e:
+		regStatus['entries'].remove(host)
 	else:
-		print('error')
+		raise ValueError('host %s does not exist' % hostname)
+
+# command procedures
+
+def add_command(regStatus, argv):
+	if argv:
+		dst = argv[0]
 		
+		if 'host' == dst:
+			if 3 == len(argv)
+				hostname = argv[1]
+				size = int(argv[2])
+				add_host(regStatus, hostname, size)
+			else
+				raise ValueError('Incorrect arguments for add host: %s' % ' '.join(argv[1:]))
+		elif 'cluster' == dst:
+			if 2 == len(argv):
+				clustername = argv[1]
+				add_cluster(regStatus, clustername)
+			else
+				raise ValueError('Incorrect arguments for add cluster: %s' % ' '.join(argv[1:]))
+		else:
+			raise ValueError('Incorrect arguments for add: %s' % ' '.join(argv))
+			
+		return 1
+	else:
+		raise ValueError('Incorrect arguments for add: %s' % ' '.join(argv))
+
+def display_command(regStatus, argv):
+	if 1 == len(argv):
+		dst = argv[0]
+		
+		if '--all' == dst:
+			display_all_clusters_info(regStatus)
+		else:
+			display_cluster_info(regStatus, dst)
+		
+		return 0
+	else:
+		raise ValueError('Incorrect arguments for ls: %s' % ' '.join(argv))
+
+def generate_command(regStatus, argv):
+	if argv:
+		dst = argv[0]
+	
+		if 'public' == dst:
+			if 2 == len(argv)
+				hostsPath = argv[1]
+				write_public_hosts_entries(regStatus, hostsPath)
+			else
+				raise ValueError('Incorrect arguments for generate public: %s' % ' '.join(argv[1:]))
+		elif 'private' == dst:
+			if 3 == len(argv)
+				hostsPath = argv[1]
+				namespace = argv[2]
+				write_private_hosts(regStatus, hostsPath, namespace)
+			else
+				raise ValueError('Incorrect arguments for generate private: %s' % ' '.join(argv[1:]))
+		else:
+			raise ValueError('Incorrect arguments for generate: %s' % ' '.join(argv))
+		
+		return 0
+	else:
+		raise ValueError('Incorrect arguments for generate: %s' % ' '.join(argv))
+
+def assign_command(regStatus, argv):
+	if argv:
+		dst = argv[0]
+	
+		if 'address' == dst:
+			if 4 == len(argv)
+				hostname = argv[1]
+				public_ip = argv[2]
+				private_ip = argv[3]
+				assign_ip_address(regStatus, hostname, public_ip, private_ip)
+			else
+				raise ValueError('Incorrect arguments for assign address: %s' % ' '.join(argv[1:]))
+		elif 'cluster' == dst:
+			if 3 == len(argv)
+				clustername = argv[1]
+				hostname = argv[2]
+				assign_to_cluster(regStatus, clustername, hostname)
+			else
+				raise ValueError('Incorrect arguments for assign cluster: %s' % ' '.join(argv[1:]))
+		elif 'namespace' == dst:
+			if 3 == len(argv)
+				nsname = argv[1]
+				hostname = argv[2]
+				assign_to_namespace(regStatus, nsname, hostname)
+			else
+				raise ValueError('Incorrect arguments for assign namespace: %s' % ' '.join(argv[1:]))
+		elif 'role' == dst:
+			if 3 == len(argv)
+				clustername = argv[1]
+				role = argv[2]
+				assign_role(regStatus, clustername, role)
+			else
+				raise ValueError('Incorrect arguments for assign role: %s' % ' '.join(argv[1:]))
+		else:
+			raise ValueError('Incorrect arguments for assign: %s' % ' '.join(argv))
+		
+		return 1
+	else:
+		raise ValueError('Incorrect arguments for assign: %s' % ' '.join(argv))
+
+def list_command(regStatus, argv):
+	if argv:
+		dst = argv[0]
+	
+		if 'cluster' == dst:
+			if 2 == len(argv)
+				clustername = argv[1]
+				list_cluster_hosts(regStatus, clustername)
+			else
+				raise ValueError('Incorrect arguments for list cluster: %s' % ' '.join(argv[1:]))
+		elif 'namespace' == dst:
+			if 2 == len(argv)
+				nsname = argv[1]
+				list_namespace_hosts(regStatus, nsname)
+			else
+				raise ValueError('Incorrect arguments for list namespace: %s' % ' '.join(argv[1:]))
+		elif 'minsize' == dst:
+			if 2 == len(argv)
+				clustername = argv[1]
+				minsize(regStatus, clustername)
+			else
+				raise ValueError('Incorrect arguments for list minsize: %s' % ' '.join(argv[1:]))
+		else:
+			raise ValueError('Incorrect arguments for list: %s' % ' '.join(argv))
+		
+		return 0
+	else:
+		raise ValueError('Incorrect arguments for list: %s' % ' '.join(argv))
+
+def remove_command(regStatus, argv):
+	if argv:
+		dst = argv[0]
+	
+		if 'host' == dst:
+			if 2 == len(argv)
+				hostname = argv[1]
+				remove_host(regStatus, hostname)
+			else
+				raise ValueError('Incorrect arguments for remove host: %s' % ' '.join(argv[1:]))
+		# todo
+		# elif 'cluster' == dst:
+		else:
+			raise ValueError('Incorrect arguments for remove: %s' % ' '.join(argv))
+		
+		return 1
+	else:
+		raise ValueError('Incorrect arguments for remove: %s' % ' '.join(argv))
+
+def main():
+	regPath = sys.argv[1]
+	command = sys.argv[2]
+	
+	procedures = {
+		'add': add_command,
+		'display': display_command,
+		'generate': generate_command,
+		'assign': assign_command,
+		'list': list_command,
+		'remove': remove_command,
+	}
+	
+	try:
+		# read current registry status
+		with open(regPath, "r+") as regFile:
+			regStatus = load_registry(regFile)
+		
+		# conduct command
+		if command in procedures:
+			procedure = procedures[command]
+			updated = procedure(regStatus, sys.argv[3:])
+
+			# write current registry status, if required
+			if updated:
+				os.remove(regPath)
+				with open(regPath, "w") as regFile:
+					save_registry(regFile, regStatus)
+		else:
+			raise ValueError('Unknown command: %s' % command)
+
+	except Exception as e:
+		print(e)
+		return 1
+
 	return 0
 
 if __name__ == '__main__':
