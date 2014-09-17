@@ -8,7 +8,7 @@ ID_SEQUENCE_PATH=${SETTINGS_DIR}/sequence
 CFG_PATH=${SETTINGS_DIR}/config.cfg
 
 [ -d "${SETTINGS_DIR}" ] || mkdir ${SETTINGS_DIR}
-[ -f "${REGISTRY_PATH}" ] || echo '{ "entries": [] }' > ${REGISTRY_PATH}
+[ -f "${REGISTRY_PATH}" ] || echo '{ "entries": [], "clusters": [] }' > ${REGISTRY_PATH}
 [ -f "${ID_SEQUENCE_PATH}" ] || echo '0' > ${ID_SEQUENCE_PATH}
 [ -f "${CFG_PATH}" ] || { echo 'config.cfg missing!!'; exit 1 ; }
 
@@ -134,7 +134,8 @@ assign_ip_address() {
 	ssh-keygen -R ${PUBLIC_IP} -f "${HOME}/.ssh/known_hosts" > /dev/null 2>&1
 
 	# acquire temporary password
-	TMP_PASSWORD=$(${PYTHON} ${SBIN_DIR}/fetchmail.py -s ${EMAIL_SERVER} -u ${EMAIL_USERNAME} -p ${EMAIL_PASSWORD} -n ${HOSTNAME})
+	TMP_PASSWORD=$(${PYTHON} ${SBIN_DIR}/fetchmail.py ${CLIENT_ID} ${API_KEY} ${EMAIL_SERVER} ${EMAIL_USERNAME} ${EMAIL_PASSWORD} ${HOSTNAME})
+	[ -z "${TMP_PASSWORD}" ] && return 1
 
 	# reset password
 	${SBIN_DIR}/init-${REGION}.ex ${PUBLIC_IP} ${TMP_PASSWORD} ${ROOT_PASSWORD} > /dev/null 2>&1
@@ -166,7 +167,7 @@ install_necessary_packages() {
 	PID_LIST=""
 	for HOSTNAME in ${HOSTNAMES[@]}
 	do
-		ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 & <<'ENDSSH'
+		ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH &
 			apt-get update
 			apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
 ENDSSH
@@ -196,7 +197,7 @@ destroy_node() {
 rm_cluster() {
 	CLUSTER_NAME=$1
 
-	${PYTHON} ${SBIN_DIR}/registry.py remove cluster ${CLUSTER_NAME}
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} remove cluster ${CLUSTER_NAME}
 	RETVAL=$?
 	[ "${RETVAL}" -eq 1 ] && exit 1
 	
