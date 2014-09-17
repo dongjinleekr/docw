@@ -5,9 +5,6 @@ Created on Mar 26, 2014
 @author: dongjinleekr
 '''
 
-# example:
-# python3 create.py -c njxEdecoXRqufrmc9xcJ9 -a d2cb3cd48a93da819e67c0eb8ad34196 -n testhost -s 62 -i ubuntu-14.04 -r sgp1
-
 import sys, argparse
 from dopy.manager import DoManager
 
