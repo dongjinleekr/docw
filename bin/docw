@@ -11,13 +11,15 @@ print_usage() {
   echo "Usage: docw [<command>] [<options>]"
   echo ""
   echo "  where command is one of:"
-  echo "    ls                   display current status."
-  echo "    make                 create node(s)"
+  echo "    ls                   display current status"
+  echo "    mknode               create node"
+  echo "    mknodes              create node(s)"
+  echo "    mkcluster            create cluster"
   echo "    format               format node(s)"
   echo "    set                  configure node(s)"
   echo "    rm                   remove node(s)"
   echo ""
-  echo "  All commands print help when invoked without parameters, or with -h"
+  echo "  All commands print help when invoked without parameters"
   echo ""
 }
 
@@ -31,17 +33,31 @@ print_ls_usage() {
   echo ""
 }
 
-print_make_usage() {
+print_mknode_usage() {
   echo ""
-  echo "Usage: docw make [<options>]"
+  echo "Usage: docw mknode <size>    create a single node whose core count is <size>"
+  echo "                             hostnames are assigned automatically"
   echo ""
-  echo "  where options are one of:"
-  echo "    node <hostname> <size>   create node sized <size> and named <hostname>"
-  echo "    nodes <count> <size>     create <count> nodes at once, sized <size>. hostnames are assigned automatically."
-  echo "    cluster <name> <hostname>*   create cluster <name> with given hosts."
+  echo "  For details on <size>, please refer https://www.digitalocean.com/pricing/"
   echo ""
-  echo "  <size> is specified by the number of cores of desired node size."
-  echo "  For details, please refer https://www.digitalocean.com/pricing/"
+}
+
+print_mknodes_usage() {
+  echo ""
+  echo "Usage: docw mknodes <size> <count>     create <count> nodes with <size> cores at once"
+  echo "                                       hostnames are assigned automatically"
+  echo ""
+  echo "  For details on <size>, please refer https://www.digitalocean.com/pricing/"
+  echo ""
+}
+
+print_mkcluster_usage() {
+  echo ""
+  echo "Usage: docw mkcluster <name> <role> <hostname>*    create cluster <name> with given set of hosts"
+  echo ""
+  echo "  where role are one of:"
+  echo "    hadoop                   setup hadoop cluster. namenode hostname should be given as an option"
+  echo "                             The first specified host becomes namenode"
   echo ""
 }
 
@@ -56,15 +72,6 @@ print_format_usage() {
   echo "    1. configure given node's root password."
   echo "    2. Add the node to /etc/hosts."
   echo "    3. setup password-less login with the node."
-  echo ""
-}
-
-print_set_usage() {
-  echo ""
-  echo "Usage: docw set <clustername> <role> [<options>]"
-  echo ""
-  echo "  where role are one of:"
-  echo "    hadoop                   setup hadoop cluster. namenode hostname should be given as an option."
   echo ""
 }
 
@@ -102,7 +109,7 @@ make_nodes() {
 	for I in $(seq ${ID_START} ${ID_END})
 	do
 		HOSTNAME=$(printf ${HOSTNAME_PREFIX} ${I})
-		create_node ${HOSTNAME} ${SIZE} &
+		add_host ${HOSTNAME} ${SIZE} &
 	PID_LIST=${PID_LIST}' '$!
 	done
 	
@@ -123,16 +130,6 @@ setup_hadoop_cluster() {
 	return 0
 }
 
-rm_cluster() {
-	[ "$#" -eq 1 ] || return 1
-	
-	CLUSTER_NAME=$1
-	
-	unregister_and_destroy_cluster ${CLUSTER_NAME}
-	
-	return 0
-}
-
 process_ls() {
 
 	case $1 in
@@ -143,10 +140,6 @@ process_ls() {
 			[ "${RETVAL}" -eq 0 ] && return 0
 			;;
 		"")
-			print_ls_usage
-			return 0
-			;;
-		-h)
 			print_ls_usage
 			return 0
 			;;
@@ -162,51 +155,6 @@ process_ls() {
 	return 1
 }
 
-process_make() {
-	COMMAND=$1
-	shift 1
-	
-	case $COMMAND in
-		node)
-			make_node $@
-		
-			RETVAL=$?
-			[ "${RETVAL}" -eq 0 ] && return 0
-			;;
-		nodes)
-			make_nodes $@
-		
-			RETVAL=$?
-			[ "${RETVAL}" -eq 0 ] && return 0
-			;;
-		cluster)
-			CLUSTER_NAME=$1
-			shift 1
-			
-			for HOSTNAME in $@
-			do
-				assign_to_namespace ${CLUSTER_NAME} ${HOSTNAME}
-				assign_to_cluster ${CLUSTER_NAME} ${HOSTNAME}
-				setup_hosts ${CLUSTER_NAME}
-			done
-		
-			RETVAL=$?
-			[ "${RETVAL}" -eq 0 ] && return 0
-			;;
-		"")
-			print_make_usage
-			return 0
-			;;
-		-h)
-			print_make_usage
-			return 0
-			;;
-		*)
-			return 1
-			;;
-	esac
-}
-
 process_format() {
 	
 	case $1 in
@@ -217,87 +165,21 @@ process_format() {
 			print_format_usage
 			return 0
 			;;
-		-h)
-			print_format_usage
-			return 0
-			;;
 		*)
 			for HOSTNAME in $@
 			do
-				format_node ${HOSTNAME}
+				assign_ip_address ${HOSTNAME}
 			done
-	
-			return 0
-			;;
-	esac
-}
-
-process_set() {
-	COMMAND=$1
-	shift 1
-	
-	case $COMMAND in
-		hadoop)
-			setup_hadoop_cluster $@
-		
-			RETVAL=$?
-			if [ "${RETVAL}" -eq 0 ]; then
-				set_cluster_role $1 hadoop
-				return 0
-			else
-				return 1
-			fi
-			;;
-		"")
-			print_set_usage
-			return 0
-			;;
-		-h)
-			print_set_usage
-			return 0
-			;;
-		*)
-			return 1
-			;;
-	esac
-}
-
-process_rm() {
-	COMMAND=$1
-	shift 1
-	
-	case $COMMAND in
-		cluster)
-			rm_cluster $@
-		
-			RETVAL=$?
-			# todo: remove from registry
-			# if [ "${RETVAL}" -eq 0 ]; then
-			# else
-			# fi
 			
+			install_necessary_packages $@
+	
 			return 0
-			;;
-		"")
-			print_rm_usage
-			return 0
-			;;
-		-h)
-			print_rm_usage
-			return 0
-			;;
-		*)
-			return 1
 			;;
 	esac
 }
 
 case $1 in
-  "")
-		print_usage
-		exit 0
-		;;
-	-h)
+  ""|-h)
 		print_usage
 		exit 0
 		;;
@@ -306,35 +188,109 @@ case $1 in
 		process_ls $@
 		
 		RETVAL=$?
-		[ "${RETVAL}" -eq 0 ] && exit 0
+		if [ "${RETVAL}" -eq 0 ]; then
+			exit 0
+		else
+			exit 1
+		fi
 		;;
-	make)
+	mknode)
 		shift 1
-		process_make $@
+		if [ "$#" -eq 0 ]; then
+			print_mknode_usage
+			exit 0
+		else
+			make_node $@
+	
+			RETVAL=$?
+			if [ "${RETVAL}" -eq 0 ]; then
+				exit 0
+			else
+				exit 1
+			fi
+		fi
+		;;
+	mknodes)
+		shift 1
+		if [ "$#" -eq 0 ]; then
+			print_mknodes_usage
+			exit 0
+		else
+			make_nodes $@
+	
+			RETVAL=$?
+			if [ "${RETVAL}" -eq 0 ]; then
+				exit 0
+			else
+				exit 1
+			fi
+		fi
+		;;
+	mkcluster)
+		shift 1
+		if [ "$#" -eq 0 ]; then
+			print_mkcluster_usage
+			exit 0
+		else
+			# todo: input validation
+			
+			CLUSTER_NAME=$1
+			ROLE=$2
+			MASTER_HOSTNAME=$3
 		
-		RETVAL=$?
-		[ "${RETVAL}" -eq 0 ] && exit 0
+			add_cluster ${CLUSTER_NAME} ${ROLE}
+		
+			shift 2
+			for HOSTNAME in $@
+			do
+				assign_to_namespace ${CLUSTER_NAME} ${HOSTNAME}
+				assign_to_cluster ${CLUSTER_NAME} ${HOSTNAME}
+				update_namespace_hosts ${CLUSTER_NAME}
+			done
+		
+			case ${ROLE} in
+				hadoop)
+					setup_hadoop_cluster ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+		
+					RETVAL=$?
+					if [ "${RETVAL}" -eq 0 ]; then
+						exit 0
+					else
+						exit 1
+					fi
+					;;
+				*)
+					exit 1
+					;;
+			esac
+		fi
 		;;
 	format)
 		shift 1
 		process_format $@
 		
 		RETVAL=$?
-		[ "${RETVAL}" -eq 0 ] && exit 0
+		if [ "${RETVAL}" -eq 0 ]; then
+			exit 0
+		else
+			exit 1
+		fi
 		;;
-	set)
+	rmcluster)
 		shift 1
-		process_set $@
-		
-		RETVAL=$?
-		[ "${RETVAL}" -eq 0 ] && exit 0
-		;;
-	rm)
-		shift 1
-		process_rm $@
-		
-		RETVAL=$?
-		[ "${RETVAL}" -eq 0 ] && exit 0
+		if [ "$#" -eq 0 ]; then
+			print_rmcluster_usage
+			exit 0
+		else
+			rm_cluster $@
+	
+			RETVAL=$?
+			if [ "${RETVAL}" -eq 0 ]; then
+				exit 0
+			else
+				exit 1
+			fi
+		fi
 		;;
 	*)
 		print_usage 1>&2

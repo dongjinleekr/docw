@@ -46,11 +46,57 @@ if __name__ == "__main__":
 EOF
 }
 
-set_cluster_role() {
+# add host
+add_host() {
+	HOSTNAME=$1
+	SIZE=$2
+
+	# create node
+	${PYTHON} ${SBIN_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE} -i ${OS_IMAGE} -r ${REGION}
+	
+	# add to register
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add host ${HOSTNAME} ${SIZE}
+}
+
+# add cluster
+add_cluster() {
 	CLUSTER_NAME=$1
 	ROLE=$2
 	
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign role ${CLUSTER_NAME} ${ROLE}
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add cluster ${CLUSTER_NAME} ${ROLE}
+}
+
+# add host to namespace
+assign_to_namespace() {
+	NAMESPACE_NAME=$1
+	HOSTNAME=$2
+	
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign namespace ${NAMESPACE_NAME} ${HOSTNAME}
+}
+
+# add host to cluster
+assign_to_cluster() {
+	CLUSTER_NAME=$1
+	HOSTNAME=$2
+	
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign cluster ${CLUSTER_NAME} ${HOSTNAME}
+}
+
+update_namespace_hosts() {
+	NAMESPACE_NAME=$1
+	
+	HOSTS_PATH=$(mktemp)
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate private ${HOSTS_PATH} ${NAMESPACE_NAME}
+	
+	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list namespace ${NAMESPACE_NAME})
+	HOSTNAMES=( ${RESULT} )
+	
+	for HOSTNAME in ${HOSTNAMES[@]}
+	do
+		# update /etc/hosts
+		scp ${HOSTS_PATH} root@${HOSTNAME}:/etc/hosts # > /dev/null 2>&1
+		ssh -n root@${HOSTNAME} 'service nscd restart' # > /dev/null 2>&1
+	done
 }
 
 # 
@@ -65,20 +111,8 @@ display_cluster_info() {
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} display ${CLUSTER_NAME}
 }
 
-# create node
-create_node() {
-	HOSTNAME=$1
-	SIZE=$2
-
-	# create node
-	${PYTHON} ${SBIN_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE} -i ${OS_IMAGE} -r ${REGION}
-	
-	# add to register
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add host ${HOSTNAME} ${SIZE}
-}
-
-# register node
-format_node() {
+# 
+assign_ip_address() {
 	HOSTNAME=$1
 
 	CURRENT_HOSTS_PATH=$(mktemp)
@@ -108,7 +142,6 @@ format_node() {
 	# add to registry
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign address ${HOSTNAME} ${PUBLIC_IP} ${PRIVATE_IP}
 
-	# todo: using multiprocess
 	# update /etc/hosts. note: can be abstracted.
 	REGISTERED_HOSTS_PATH=$(mktemp)
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
@@ -124,59 +157,33 @@ format_node() {
 
 	ssh-keyscan -H ${PUBLIC_IP} >> ~/.ssh/known_hosts
 	ssh-keyscan -H ${HOSTNAME} >> ~/.ssh/known_hosts
-	
-	# configure necessary packages
-	ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH'
-	apt-get update
-	apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
-ENDSSH
 }
 
-assign_to_namespace() {
-	NAMESPACE_NAME=$1
-	HOSTNAME=$2
+#
+install_necessary_packages() {
+	HOSTNAMES=( $@ )
 	
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign namespace ${NAMESPACE_NAME} ${HOSTNAME}
-}
-
-assign_to_cluster() {
-	CLUSTER_NAME=$1
-	HOSTNAME=$2
-	
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add cluster ${CLUSTER_NAME}
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign cluster ${CLUSTER_NAME} ${HOSTNAME}
-}
-
-setup_hosts() {
-	NAMESPACE_NAME=$1
-	
-	HOSTS_PATH=$(mktemp)
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate private ${HOSTS_PATH} ${NAMESPACE_NAME}
-	
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list namespace ${NAMESPACE_NAME})
-	HOSTNAMES=( ${RESULT} )
-	
+	PID_LIST=""
 	for HOSTNAME in ${HOSTNAMES[@]}
 	do
-		# update /etc/hosts
-		scp ${HOSTS_PATH} root@${HOSTNAME}:/etc/hosts # > /dev/null 2>&1
-		ssh -n root@${HOSTNAME} 'service nscd restart' # > /dev/null 2>&1
+		ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 & <<'ENDSSH'
+			apt-get update
+			apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
+ENDSSH
+		PID_LIST=${PID_LIST}' '$!
 	done
+		
+	wait_all ${PID_LIST}
 }
 
-# unregister node
-unregister_node() {
+# destroy node
+destroy_node() {
 	HOSTNAME=$1
 
 	# remove ssh fingerprint
 	PUBLIC_IP=$(getent hosts ${HOSTNAME} | awk '{print $1}')
 	ssh-keygen -R ${PUBLIC_IP}
 	ssh-keygen -R ${HOSTNAME}
-}
-
-# destroy node
-destroy_node() {
-	HOSTNAME=$1
 	
 	# remove from registry
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} remove host ${HOSTNAME}
@@ -185,10 +192,14 @@ destroy_node() {
 	${PYTHON} ${SBIN_DIR}/destroy.py -c ${CLIENT_ID} -k ${API_KEY} -n ${HOSTNAME}
 }
 
-# unregister and destroy
-unregister_and_destroy_cluster() {
+# destroy cluster
+rm_cluster() {
 	CLUSTER_NAME=$1
 
+	${PYTHON} ${SBIN_DIR}/registry.py remove cluster ${CLUSTER_NAME}
+	RETVAL=$?
+	[ "${RETVAL}" -eq 1 ] && exit 1
+	
 	CURRENT_HOSTS_PATH=$(mktemp)
 	REGISTERED_HOSTS_PATH=$(mktemp)
 	UPDATED_HOSTS_PATH=$(mktemp)
@@ -205,7 +216,6 @@ unregister_and_destroy_cluster() {
 
 	for HOSTNAME in ${HOSTNAMES[@]}
 	do
-		unregister_node ${HOSTNAME}
 		destroy_node ${HOSTNAME}
 	done
 

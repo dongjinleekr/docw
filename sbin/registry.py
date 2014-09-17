@@ -32,11 +32,14 @@ def add_host(regStatus, hostname, size):
 		# todo: hostname -> name
 		regStatus['entries'].append({ 'hostname': hostname, 'size': size })
 
-def add_cluster(regStatus, clustername):
+def add_cluster(regStatus, clustername, role):
 	if any(c['name'] == clustername for c in regStatus['clusters']):
 		raise ValueError('cluster %s already exists' % clustername)
 	else:
-		regStatus['clusters'].append({ 'name': clustername })
+		if role in { 'hadoop' }:
+			regStatus['clusters'].append({ 'name': clustername, 'role': role })
+		else:
+			raise ValueError('Invalid role: %s' % role)
 
 def display_all_clusters_info(regStatus):	
 	clusters = [ c['name'] for c in regStatus['clusters'] if 'cluster' in c ]
@@ -160,20 +163,6 @@ def assign_to_cluster(regStatus, clustername, hostname):
 			raise ValueError('IP addresses not assigned yet: %s' % hostname)
 	else:
 		raise ValueError('host %s does not exist' % hostname)
-
-def assign_role(regStatus, clustername, role):
-	cluster = next((c for c in regStatus['clusters'] if c['name'] == clustername), None)
-	
-	if clustername:
-		if any(e['cluster'] == clustername for e in regStatus['entries']):
-			if role in { 'hadoop' }:
-				cluster['role'] = role
-			else:
-				raise ValueError('Invalid role: %s' % role)
-		else:
-			raise ValueError('No host assigned to cluster %s' % clustername)
-	else:
-		raise ValueError('cluster %s does not exist' % clustername)
 		
 def list_cluster_hosts(regStatus, clustername):
 	print('\t'.join([ e['hostname'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]))
@@ -215,9 +204,10 @@ def add_command(regStatus, argv):
 			else:
 				raise ValueError('Incorrect arguments for add host: %s' % ' '.join(argv[1:]))
 		elif 'cluster' == dst:
-			if 2 == len(argv):
+			if 3 == len(argv):
 				clustername = argv[1]
-				add_cluster(regStatus, clustername)
+				role = argv[2]
+				add_cluster(regStatus, clustername, role)
 			else:
 				raise ValueError('Incorrect arguments for add cluster: %s' % ' '.join(argv[1:]))
 		else:
@@ -290,13 +280,6 @@ def assign_command(regStatus, argv):
 				assign_to_namespace(regStatus, nsname, hostname)
 			else:
 				raise ValueError('Incorrect arguments for assign namespace: %s' % ' '.join(argv[1:]))
-		elif 'role' == dst:
-			if 3 == len(argv):
-				clustername = argv[1]
-				role = argv[2]
-				assign_role(regStatus, clustername, role)
-			else:
-				raise ValueError('Incorrect arguments for assign role: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for assign: %s' % ' '.join(argv))
 		
