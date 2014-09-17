@@ -1,19 +1,7 @@
 # exe
 PYTHON=$(which python3)
 
-# settings file
-SETTINGS_DIR=${HOME}/.docw
-REGISTRY_PATH=${SETTINGS_DIR}/registry
-ID_SEQUENCE_PATH=${SETTINGS_DIR}/sequence
-CFG_PATH=${SETTINGS_DIR}/config.cfg
-
-[ -d "${SETTINGS_DIR}" ] || mkdir ${SETTINGS_DIR}
-[ -f "${REGISTRY_PATH}" ] || echo '{ "entries": [], "clusters": [] }' > ${REGISTRY_PATH}
-[ -f "${ID_SEQUENCE_PATH}" ] || echo '0' > ${ID_SEQUENCE_PATH}
-[ -f "${CFG_PATH}" ] || { echo 'config.cfg missing!!'; exit 1 ; }
-
-. ${CFG_PATH}
-
+# directories
 BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
 SBIN_DIR=${BASE_DIR}/sbin
 TEMPLATE_DIR=${BASE_DIR}/templates
@@ -25,6 +13,19 @@ REMOTE_HOST_USER='hduser'
 REMOTE_HOST_PASSWD='hduser'
 HADOOP_VERSION=1.2.1
 SNAPPY_VERSION=1.1.1
+
+# settings file
+SETTINGS_DIR=${HOME}/.docw
+REGISTRY_PATH=${SETTINGS_DIR}/registry
+ID_SEQUENCE_PATH=${SETTINGS_DIR}/sequence
+CFG_PATH=${SETTINGS_DIR}/config.cfg
+
+[ -d "${SETTINGS_DIR}" ] || mkdir ${SETTINGS_DIR}
+[ -f "${REGISTRY_PATH}" ] || echo '{ "entries": [], "clusters": [] }' > ${REGISTRY_PATH}
+[ -f "${ID_SEQUENCE_PATH}" ] || echo '0' > ${ID_SEQUENCE_PATH}
+[ -f "${CFG_PATH}" ] || { cp ${BASE_DIR}/config-template.cfg ${CFG_PATH}; echo "config missing: please edit ${CFG_PATH}"; exit 0;}
+
+. ${CFG_PATH}
 
 # wait all
 wait_all() {
