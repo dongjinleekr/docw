@@ -26,15 +26,17 @@ def save_registry(regFile, regData):
 
 def add_host(regStatus, hostname, size):
 	if any(e['hostname'] == hostname for e in regStatus['entries']):
-		raise ValueError('host named %s already exists' % hostname)
+		raise ValueError('host %s already exists' % hostname)
 	else:
 		# todo: entries -> hosts
 		# todo: hostname -> name
 		regStatus['entries'].append({ 'hostname': hostname, 'size': size })
 
 def add_cluster(regStatus, clustername):
-		# todo: 같은 이름이 있는지 미리 체크.
-		regStatus['clusters'].append({ 'name': cluster })
+	if any(c['name'] == clustername for c in regStatus['clusters']):
+		raise ValueError('cluster %s already exists' % clustername)
+	else:
+		regStatus['clusters'].append({ 'name': clustername })
 
 def display_all_clusters_info(regStatus):	
 	clusters = [ c['name'] for c in regStatus['clusters'] if 'cluster' in c ]
@@ -186,10 +188,18 @@ def minsize(regStatus, clustername):
 def remove_host(regStatus, hostname):
 	host = next((e for e in regStatus['entries'] if e['hostname'] == hostname), None)
 	
-	if e:
+	if host:
 		regStatus['entries'].remove(host)
 	else:
 		raise ValueError('host %s does not exist' % hostname)
+
+def remove_cluster(regStatus, clustername):
+	cluster = next((c for c in regStatus['clusters'] if c['name'] == clustername), None)
+	
+	if cluster:
+		regStatus['clusters'].remove(cluster)
+	else:
+		raise ValueError('cluster %s does not exist' % clustername)
 
 # command procedures
 
@@ -198,17 +208,17 @@ def add_command(regStatus, argv):
 		dst = argv[0]
 		
 		if 'host' == dst:
-			if 3 == len(argv)
+			if 3 == len(argv):
 				hostname = argv[1]
 				size = int(argv[2])
 				add_host(regStatus, hostname, size)
-			else
+			else:
 				raise ValueError('Incorrect arguments for add host: %s' % ' '.join(argv[1:]))
 		elif 'cluster' == dst:
 			if 2 == len(argv):
 				clustername = argv[1]
 				add_cluster(regStatus, clustername)
-			else
+			else:
 				raise ValueError('Incorrect arguments for add cluster: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for add: %s' % ' '.join(argv))
@@ -235,17 +245,17 @@ def generate_command(regStatus, argv):
 		dst = argv[0]
 	
 		if 'public' == dst:
-			if 2 == len(argv)
+			if 2 == len(argv):
 				hostsPath = argv[1]
 				write_public_hosts_entries(regStatus, hostsPath)
-			else
+			else:
 				raise ValueError('Incorrect arguments for generate public: %s' % ' '.join(argv[1:]))
 		elif 'private' == dst:
-			if 3 == len(argv)
+			if 3 == len(argv):
 				hostsPath = argv[1]
 				namespace = argv[2]
 				write_private_hosts(regStatus, hostsPath, namespace)
-			else
+			else:
 				raise ValueError('Incorrect arguments for generate private: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for generate: %s' % ' '.join(argv))
@@ -259,33 +269,33 @@ def assign_command(regStatus, argv):
 		dst = argv[0]
 	
 		if 'address' == dst:
-			if 4 == len(argv)
+			if 4 == len(argv):
 				hostname = argv[1]
 				public_ip = argv[2]
 				private_ip = argv[3]
 				assign_ip_address(regStatus, hostname, public_ip, private_ip)
-			else
+			else:
 				raise ValueError('Incorrect arguments for assign address: %s' % ' '.join(argv[1:]))
 		elif 'cluster' == dst:
-			if 3 == len(argv)
+			if 3 == len(argv):
 				clustername = argv[1]
 				hostname = argv[2]
 				assign_to_cluster(regStatus, clustername, hostname)
-			else
+			else:
 				raise ValueError('Incorrect arguments for assign cluster: %s' % ' '.join(argv[1:]))
 		elif 'namespace' == dst:
-			if 3 == len(argv)
+			if 3 == len(argv):
 				nsname = argv[1]
 				hostname = argv[2]
 				assign_to_namespace(regStatus, nsname, hostname)
-			else
+			else:
 				raise ValueError('Incorrect arguments for assign namespace: %s' % ' '.join(argv[1:]))
 		elif 'role' == dst:
-			if 3 == len(argv)
+			if 3 == len(argv):
 				clustername = argv[1]
 				role = argv[2]
 				assign_role(regStatus, clustername, role)
-			else
+			else:
 				raise ValueError('Incorrect arguments for assign role: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for assign: %s' % ' '.join(argv))
@@ -299,22 +309,22 @@ def list_command(regStatus, argv):
 		dst = argv[0]
 	
 		if 'cluster' == dst:
-			if 2 == len(argv)
+			if 2 == len(argv):
 				clustername = argv[1]
 				list_cluster_hosts(regStatus, clustername)
-			else
+			else:
 				raise ValueError('Incorrect arguments for list cluster: %s' % ' '.join(argv[1:]))
 		elif 'namespace' == dst:
-			if 2 == len(argv)
+			if 2 == len(argv):
 				nsname = argv[1]
 				list_namespace_hosts(regStatus, nsname)
-			else
+			else:
 				raise ValueError('Incorrect arguments for list namespace: %s' % ' '.join(argv[1:]))
 		elif 'minsize' == dst:
-			if 2 == len(argv)
+			if 2 == len(argv):
 				clustername = argv[1]
 				minsize(regStatus, clustername)
-			else
+			else:
 				raise ValueError('Incorrect arguments for list minsize: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for list: %s' % ' '.join(argv))
@@ -328,13 +338,17 @@ def remove_command(regStatus, argv):
 		dst = argv[0]
 	
 		if 'host' == dst:
-			if 2 == len(argv)
+			if 2 == len(argv):
 				hostname = argv[1]
 				remove_host(regStatus, hostname)
-			else
+			else:
 				raise ValueError('Incorrect arguments for remove host: %s' % ' '.join(argv[1:]))
-		# todo
-		# elif 'cluster' == dst:
+		elif 'cluster' == dst:
+			if 2 == len(argv):
+				clustername = argv[1]
+				remove_cluster(regStatus, clustername)
+			else:
+				raise ValueError('Incorrect arguments for remove cluster: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for remove: %s' % ' '.join(argv))
 		
