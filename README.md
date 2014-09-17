@@ -3,7 +3,7 @@ docw
 
 DOCW is a cli-based tool for building JIT cluster on top of DigitalOcean™ cloud service. Using this tool, you can deploy your own hadoop cluster easily & quickly.
 
-## Create Node(s)
+## Creating Node(s)
 
 With following syntax, you can create a node on your digitalocean account:
 
@@ -27,7 +27,7 @@ Example:
 
 > docw mknodes 2 3  \# Create 3 hosts at once, each of which has 2 cores.
 
-## Format Node(s)
+## Formatting Node(s)
 
 When a digitalocean node is created, its root password is ramdonly generated and delivered via your email account. Before using it, you have to complete following tasks:
 
@@ -48,7 +48,7 @@ Example:
 
 When the job completes, check your /etc/hosts. You can see all the host we made so far are added to your hosts file. You can also connect to each of them using **ssh root@<hostname>**.
 
-## Make Cluster
+## Making a Cluster
 
 Now You can create cluster with formatted hosts. By version 0.5, docw only supports hadoop 1.2.1.
 
@@ -68,11 +68,11 @@ let's connect to namenode and launch hadoop cluster:
 > 
 > start-all.sh
 
-## Querying Cluster
+## Querying
 
 Using docw, you can create & manage multiple clusters, with different names. To check the information about any cluster, please input **docw ls \<cluster\>**. Using **docw ls --all**, you can see the whole list of running clusters.
 
-## Remove Cluster
+## Removing Cluster
 
 After use, delete the whole cluster:
 
