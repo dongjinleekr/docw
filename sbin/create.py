@@ -2,14 +2,19 @@
 '''
 Created on Mar 26, 2014
 
-@author: dongjinleekr
+@author: Dongjin Lee (dongjin.lee.kr@gmail.com)
 '''
 
 import sys, argparse
 from dopy.manager import DoManager
 
+# Currently, ubuntu 14.04 is the only supported os.
 IMAGE_ID_MAP = { 'ubuntu-14.04': 5141286 }
+
+# Currently, only two regions are supported.
 REGION_ID_MAP = { 'nyc2': 4, 'sgp1': 6 }
+
+# CPU count to droplet size id.
 SIZE_ID_MAP = {
 	2: 62,
 	4: 65,
