@@ -9,7 +9,7 @@ With following syntax, you can create a node on your digitalocean account:
 
 Syntax:
 
-> docw mknode <size>
+> docw mknode \<size\>
 
 Example:
 
@@ -21,7 +21,7 @@ You can also create multiple nodes at once:
 
 Syntax:
 
-> docw mknodes <size> <count>
+> docw mknodes \<size\> \<count\>
 
 Example:
 
@@ -40,7 +40,7 @@ You can do all above tasks at once, with following command:
 
 Syntax:
 
-> docw format <hostname>*
+> docw format \<hostname\>*
 
 Example:
 
@@ -54,7 +54,7 @@ Now You can create cluster with formatted hosts. By version 0.5, docw only suppo
 
 Syntax:
 
-> docw mkcluster <cluster-name> <role> <hostname>*
+> docw mkcluster \<cluster-name\> \<role\> \<hostname\>*
 
 Example:
 
@@ -63,12 +63,14 @@ Example:
 let's connect to namenode and launch hadoop cluster:
 
 > ssh hduser@dongjinleekr-1
+> 
 > hadoop namenode -format
+> 
 > start-all.sh
 
 ## Querying Cluster
 
-Using docw, you can create & manage multiple clusters, with different names. To check the information about any cluster, please input **docw ls <cluster>**. Using **docw ls --all**, you can see the whole list of running clusters.
+Using docw, you can create & manage multiple clusters, with different names. To check the information about any cluster, please input **docw ls \<cluster\>**. Using **docw ls --all**, you can see the whole list of running clusters.
 
 ## Remove Cluster
 
@@ -76,7 +78,7 @@ After use, delete the whole cluster:
 
 Syntax:
 
-> docw rmcluster <cluster-name>
+> docw rmcluster \<cluster-name\>
 
 Example:
 
