@@ -161,6 +161,31 @@ assign_ip_address() {
 	ssh-keyscan -H ${HOSTNAME} >> ~/.ssh/known_hosts
 }
 
+raw_hosts() {
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list raw
+}
+
+format_hosts() {
+	# todo: input validation
+	PID_LIST=""
+	
+	for HOSTNAME in $@
+	do
+		echo "Configuring ${HOSTNAME}..."
+		assign_ip_address ${HOSTNAME}
+		ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH &
+	apt-get update
+	apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
+ENDSSH
+		PID_LIST=${PID_LIST}' '$!
+	done
+	
+	echo "Waiting for package installations to be completed..."
+	wait_all ${PID_LIST}
+	
+	echo "Completed."
+}
+
 # destroy node
 destroy_node() {
 	HOSTNAME=$1
