@@ -174,6 +174,10 @@ def minsize(regStatus, clustername):
 	sizes = [ e['size'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]
 	print(min(sizes))
 
+def list_raw_hosts(regStatus):
+	raw_hosts = [ e['hostname'] for e in regStatus['entries'] if not ip_address_assigned(e) ]
+	print('\t'.join(raw_hosts))
+
 def remove_host(regStatus, hostname):
 	host = next((e for e in regStatus['entries'] if e['hostname'] == hostname), None)
 	
@@ -309,6 +313,8 @@ def list_command(regStatus, argv):
 				minsize(regStatus, clustername)
 			else:
 				raise ValueError('Incorrect arguments for list minsize: %s' % ' '.join(argv[1:]))
+		elif 'raw' == dst:
+			list_raw_hosts(regStatus)
 		else:
 			raise ValueError('Incorrect arguments for list: %s' % ' '.join(argv))
 		
