@@ -161,23 +161,6 @@ assign_ip_address() {
 	ssh-keyscan -H ${HOSTNAME} >> ~/.ssh/known_hosts
 }
 
-#
-install_necessary_packages() {
-	HOSTNAMES=( $@ )
-	
-	PID_LIST=""
-	for HOSTNAME in ${HOSTNAMES[@]}
-	do
-		ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH &
-			apt-get update
-			apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
-ENDSSH
-		PID_LIST=${PID_LIST}' '$!
-	done
-		
-	wait_all ${PID_LIST}
-}
-
 # destroy node
 destroy_node() {
 	HOSTNAME=$1

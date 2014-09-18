@@ -166,12 +166,19 @@ process_format() {
 			return 0
 			;;
 		*)
+			# todo: input validation
+			PID_LIST=""
 			for HOSTNAME in $@
 			do
 				assign_ip_address ${HOSTNAME}
+				ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH &
+			apt-get update
+			apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
+ENDSSH
+				PID_LIST=${PID_LIST}' '$!
 			done
 			
-			install_necessary_packages $@
+			wait_all ${PID_LIST}
 	
 			return 0
 			;;
