@@ -159,26 +159,15 @@ process_format() {
 	
 	case $1 in
 		"--all")
-			echo 'not implemented yet'
+			HOSTNAMES=$(raw_hosts)
+			format_hosts ${HOSTNAMES}
 			;;
 		"")
 			print_format_usage
 			return 0
 			;;
 		*)
-			# todo: input validation
-			PID_LIST=""
-			for HOSTNAME in $@
-			do
-				assign_ip_address ${HOSTNAME}
-				ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH &
-			apt-get update
-			apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
-ENDSSH
-				PID_LIST=${PID_LIST}' '$!
-			done
-			
-			wait_all ${PID_LIST}
+			format_hosts $@
 	
 			return 0
 			;;
