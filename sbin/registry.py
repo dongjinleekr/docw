@@ -42,7 +42,7 @@ def add_cluster(regStatus, clustername, role):
 			raise ValueError('Invalid role: %s' % role)
 
 def display_all_clusters_info(regStatus):	
-	clusters = [ c['name'] for c in regStatus['clusters'] if 'cluster' in c ]
+	clusters = [ c['name'] for c in regStatus['clusters'] ]
 	
 	print('Currently, %d clusters exist.' % len(clusters))
 	print()
@@ -59,9 +59,9 @@ def display_cluster_info(regStatus, clustername):
 	"""
 
 	# find cluster
-	cluster = next(( c['name'] for c in regStatus['clusters'] if 'name' in c and c['name'] == clustername), None)
+	cluster = next(( c for c in regStatus['clusters'] if 'name' in c and c['name'] == clustername), None)
 
-	if cluster:	
+	if cluster:
 		# all hosts in given cluster
 		hosts = [ e['hostname'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]
 		
