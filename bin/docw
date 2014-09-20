@@ -17,7 +17,7 @@ print_usage() {
   echo "    mkcluster            create cluster"
   echo "    format               format node(s)"
   echo "    set                  configure node(s)"
-  echo "    rm                   remove node(s)"
+  echo "    rmcluster            remove cluster"
   echo ""
   echo "  All commands print help when invoked without parameters"
   echo ""
@@ -66,7 +66,8 @@ print_format_usage() {
   echo "Usage: docw format [<options>]"
   echo ""
   echo "  where options are one of:"
-  echo "    <hostname>*              format all given nodes."
+  echo "    --all                    format all unformatted nodes (recommended)"
+  echo "    <hostname>*              format all given nodes"
   echo ""
   echo "  The format process includes:"
   echo "    1. configure given node's root password."
@@ -75,12 +76,9 @@ print_format_usage() {
   echo ""
 }
 
-print_rm_usage() {
+print_rmcluster_usage() {
   echo ""
-  echo "Usage: docw rm [<options>]"
-  echo ""
-  echo "  where options are one of:"
-  echo "    cluster <clustername>    remove all nodes that belongs to <clustername>."
+  echo "Usage: docw rmcluster <clustername>"
   echo ""
 }
 
