@@ -14,9 +14,8 @@ print_usage() {
   echo "    ls                   display current status"
   echo "    mknode               create node"
   echo "    mknodes              create node(s)"
-  echo "    mkcluster            create cluster"
   echo "    format               format node(s)"
-  echo "    set                  configure node(s)"
+  echo "    mkcluster            create cluster"
   echo "    rmcluster            remove cluster"
   echo ""
   echo "  All commands print help when invoked without parameters"
@@ -53,7 +52,9 @@ print_mknodes_usage() {
 
 print_mkcluster_usage() {
   echo ""
-  echo "Usage: docw mkcluster <name> <role> <hostname>*    create cluster <name> with given set of hosts"
+  echo "Usage: docw mkcluster <name> <role> <hostname>* (--master <masterhost>)"
+  echo ""
+  echo "                                       create cluster <name> with given set of hosts"
   echo ""
   echo "  where role are one of:"
   echo "    hadoop                   setup hadoop cluster. namenode hostname should be given as an option"
@@ -226,22 +227,24 @@ case $1 in
 			print_mkcluster_usage
 			exit 0
 		else
-			# todo: input validation
+			RESULT=$(validate_mkcluster $@)
+			ARGS=( ${RESULT} )
 			
-			CLUSTER_NAME=$1
-			ROLE=$2
-			MASTER_HOSTNAME=$3
-		
+			CLUSTER_NAME=${ARGS[0]}
+			ROLE=${ARGS[1]}
+			MASTER_HOSTNAME=${ARGS[2]}
+
 			add_cluster ${CLUSTER_NAME} ${ROLE}
-		
-			shift 2
-			for HOSTNAME in $@
+			
+			for HOSTNAME in ${ARGS[@]:2}
 			do
 				assign_to_namespace ${CLUSTER_NAME} ${HOSTNAME}
 				assign_to_cluster ${CLUSTER_NAME} ${HOSTNAME}
 				update_namespace_hosts ${CLUSTER_NAME}
 			done
-		
+			
+			configure_master_host ${CLUSTER_NAME} ${ARGS[@]:2}
+			
 			case ${ROLE} in
 				hadoop)
 					setup_hadoop_cluster ${CLUSTER_NAME} ${MASTER_HOSTNAME}

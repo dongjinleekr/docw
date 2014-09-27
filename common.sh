@@ -4,6 +4,7 @@ PYTHON=$(which python3)
 # directories
 BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
 SBIN_DIR=${BASE_DIR}/sbin
+TOOLS_DIR=${BASE_DIR}/tools
 TEMPLATE_DIR=${BASE_DIR}/templates
 WORKING_DIR=${BASE_DIR}
 
@@ -45,6 +46,12 @@ def main():
 if __name__ == "__main__":
 	sys.exit(main())
 EOF
+}
+
+# validation procedures
+
+validate_mkcluster() {
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} validate mkcluster ${@}
 }
 
 # add host
@@ -155,7 +162,7 @@ assign_ip_address() {
 	# add ssh fingerprint (root)
 	ssh-add ${HOME}/.ssh/id_rsa > /dev/null 2>&1
 
-	${SBIN_DIR}/copy-ssh-first.ex ${HOME}/.ssh/id_rsa.pub ${HOSTNAME} root ${ROOT_PASSWORD} > /dev/null 2>&1
+	${TOOLS_DIR}/copy-ssh-first.ex ${HOME}/.ssh/id_rsa.pub ${HOSTNAME} root ${ROOT_PASSWORD} > /dev/null 2>&1
 
 	ssh-keyscan -H ${PUBLIC_IP} >> ~/.ssh/known_hosts
 	ssh-keyscan -H ${HOSTNAME} >> ~/.ssh/known_hosts
@@ -270,7 +277,7 @@ configure_hadoop_slave() {
 ENDSSH
 	
 	# add ssh fingerprint (user)
-	${SBIN_DIR}/copy-ssh.ex ${HOME}/.ssh/id_rsa.pub ${HOSTNAME} ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD} > /dev/null 2>&1
+	${TOOLS_DIR}/copy-ssh.ex ${HOME}/.ssh/id_rsa.pub ${HOSTNAME} ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD} > /dev/null 2>&1
 	
 	ssh ${REMOTE_HOST_USER}@${HOSTNAME} HADOOP_VERSION=${HADOOP_VERSION} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH'
 	# setup ssh
@@ -383,6 +390,24 @@ EOF
 	rm ${WORKING_DIR}/slaves
 }
 
+# configure loginless connection between master host and all hosts in same cluster.
+configure_master_host() {
+	CLUSTER_NAME=$1
+	MASTER_HOSTNAME=$2
+	
+	# 
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign master ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+
+	# for all hosts in cluster
+	for HOSTNAME in ${@:2}
+	do
+		ssh -n ${REMOTE_HOST_USER}@${MASTER_HOSTNAME} 'bash -s' <<ENDSSH
+			\${HOME}/bin/copy-ssh-first.ex \${HOME}/.ssh/id_rsa.pub ${HOSTNAME} ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD}
+			ssh-keyscan -H \${SLAVE_HOSTNAME} >> \${HOME}/.ssh/known_hosts
+ENDSSH
+	done
+}
+
 # configure hadoop master node.
 configure_hadoop_master() {
 	CLUSTER_NAME=$1
@@ -399,7 +424,7 @@ ENDSSH
 
 	# configure tools
 	ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} 'mkdir -p ~/bin'
-	scp ${SBIN_DIR}/copy-ssh-first.ex ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
+	scp ${TOOLS_DIR}/copy-ssh-first.ex ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
 	scp ${SBIN_DIR}/distconf ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
 	# scp ${SBIN_DIR}/mappercount ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
 	# scp ${SBIN_DIR}/reducercount ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
@@ -408,14 +433,5 @@ ENDSSH
 	echo '' >> ~/.bashrc
 	echo "export HADOOP_INSTALL=~/opt/hadoop" >> ~/.bashrc
 	echo 'export PATH=\${PATH}:~/bin:\${HADOOP_INSTALL}/bin' >> ~/.bashrc
-ENDSSH
-
-	# configure ssh key
-	ssh ${REMOTE_HOST_USER}@${HOSTNAME} 'bash -s' <<ENDSSH
-	while read SLAVE_HOSTNAME
-	do
-		\${HOME}/bin/copy-ssh-first.ex \${HOME}/.ssh/id_rsa.pub \${SLAVE_HOSTNAME} ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD}
-		ssh-keyscan -H \${SLAVE_HOSTNAME} >> \${HOME}/.ssh/known_hosts
-	done < \${HOME}/opt/hadoop/conf/slaves
 ENDSSH
 }

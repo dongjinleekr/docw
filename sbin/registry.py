@@ -150,6 +150,16 @@ def assign_to_namespace(regStatus, nsname, hostname):
 	else:
 		raise ValueError('host %s does not exist' % hostname)
 
+def assign_master(regStatus, clustername, hostname):
+	"""
+	"""
+	cluster = next((c for c in regStatus['clusters'] if c['name'] == clustername), None)
+	
+	if cluster:
+		cluster['master'] = hostname
+	else:
+		raise ValueError('cluster %s does not exist' % clustername)
+
 def assign_to_cluster(regStatus, clustername, hostname):
 	"""
 		assign a namespace into host with given hostname 
@@ -195,6 +205,37 @@ def remove_cluster(regStatus, clustername):
 		raise ValueError('cluster %s does not exist' % clustername)
 
 # command procedures
+
+def validate_command(regStatus, argv):
+	if argv:
+		dst = argv[0]
+	
+		if 'mkcluster' == dst:
+			if len(argv) >= 4:
+				if '--master' in argv[4:]:
+					if '--master' == argv[-2]:
+						clustername = argv[1]
+						role = argv[2]
+						master_hostname = argv[-1]
+						slave_hostnames = list(set(argv[3:-2] + [ master_hostname ]))	# masterhost can be omitted from host list
+						slave_hostnames.remove(master_hostname)
+					else:
+						raise ValueError('Incorrect arguments for validate mkcluster: %s' % ' '.join(argv[1:]))
+				else:
+					clustername = argv[1]
+					role = argv[2]
+					master_hostname = argv[3]
+					slave_hostnames = list(set(argv[4:]))
+					
+				print(' '.join([ clustername, role, master_hostname ] + slave_hostnames))
+			else:
+				raise ValueError('Incorrect arguments for validate mkcluster: %s' % ' '.join(argv[1:]))
+		else:
+			raise ValueError('Incorrect arguments for validate: %s' % ' '.join(argv))
+		
+		return 0
+	else:
+		raise ValueError('Incorrect arguments for validate: %s' % ' '.join(argv))
 
 def add_command(regStatus, argv):
 	if argv:
@@ -284,6 +325,13 @@ def assign_command(regStatus, argv):
 				assign_to_namespace(regStatus, nsname, hostname)
 			else:
 				raise ValueError('Incorrect arguments for assign namespace: %s' % ' '.join(argv[1:]))
+		elif 'master' == dst:
+			if 3 == len(argv):
+				clustername = argv[1]
+				hostname = argv[2]
+				assign_master(regStatus, clustername, hostname)
+			else:
+				raise ValueError('Incorrect arguments for assign namespace: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for assign: %s' % ' '.join(argv))
 		
@@ -350,6 +398,7 @@ def main():
 	command = sys.argv[2]
 	
 	procedures = {
+		'validate': validate_command,
 		'add': add_command,
 		'display': display_command,
 		'generate': generate_command,
