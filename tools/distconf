@@ -1,0 +1,12 @@
+#! /bin/sh
+
+if [ ! -z "${HADOOP_PREFIX}" ]
+then
+        while read LINE
+        do
+                rsync -avz ${HADOOP_PREFIX}/etc/hadoop/ ${LINE}:${HADOOP_PREFIX}/etc/hadoop
+        done < ${HADOOP_PREFIX}/etc/hadoop/slaves
+else
+        echo '${HADOOP_PREFIX} not detected.'
+        exit 1
+fi

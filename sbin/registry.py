@@ -180,6 +180,10 @@ def list_cluster_hosts(regStatus, clustername):
 def list_namespace_hosts(regStatus, nsname):
 	print('\t'.join([ e['hostname'] for e in regStatus['entries'] if 'cluster' in e and e['namespace'] == nsname ]))
 
+def size(regStatus, clustername):
+	sizes = [ e['size'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]
+	print(len(sizes))
+	
 def minsize(regStatus, clustername):
 	sizes = [ e['size'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]
 	print(min(sizes))
@@ -355,6 +359,12 @@ def list_command(regStatus, argv):
 				list_namespace_hosts(regStatus, nsname)
 			else:
 				raise ValueError('Incorrect arguments for list namespace: %s' % ' '.join(argv[1:]))
+		elif 'size' == dst:
+			if 2 == len(argv):
+				clustername = argv[1]
+				size(regStatus, clustername)
+			else:
+				raise ValueError('Incorrect arguments for list minsize: %s' % ' '.join(argv[1:]))
 		elif 'minsize' == dst:
 			if 2 == len(argv):
 				clustername = argv[1]

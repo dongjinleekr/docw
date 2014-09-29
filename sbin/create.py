@@ -9,7 +9,7 @@ import sys, argparse
 from dopy.manager import DoManager
 
 # Currently, ubuntu 14.04 is the only supported os.
-IMAGE_ID_MAP = { 'ubuntu-14.04': 5141286 }
+IMAGE_ID_MAP = { 'ubuntu-14.04': 6374753 }
 
 # Currently, only two regions are supported.
 REGION_ID_MAP = { 'nyc2': 4, 'sgp1': 6 }

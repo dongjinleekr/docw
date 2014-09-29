@@ -25,7 +25,7 @@ Syntax:
 
 Example:
 
-> docw mknodes 2 3  \# Create 3 hosts at once, each of which has 2 cores.
+> docw mknodes 4 3  \# Create 3 hosts at once, each of which has 2 cores.
 
 ## Formatting Node(s)
 

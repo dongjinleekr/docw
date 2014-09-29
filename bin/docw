@@ -242,9 +242,9 @@ case $1 in
 				assign_to_cluster ${CLUSTER_NAME} ${HOSTNAME}
 				update_namespace_hosts ${CLUSTER_NAME}
 			done
-			
+
 			configure_master_host ${CLUSTER_NAME} ${ARGS[@]:2}
-			
+
 			case ${ROLE} in
 				hadoop)
 					setup_hadoop_cluster ${CLUSTER_NAME} ${MASTER_HOSTNAME}

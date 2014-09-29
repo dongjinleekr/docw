@@ -1,0 +1,10 @@
+#! /bin/sh
+
+if [ ! -z "${HADOOP_PREFIX}" ]
+then
+	${HADOOP_PREFIX}/sbin/start-dfs.sh
+	${HADOOP_PREFIX}/sbin/start-yarn.sh
+else
+	echo '${HADOOP_PREFIX} not detected.'
+	exit 1
+fi

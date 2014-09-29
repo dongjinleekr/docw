@@ -1,21 +1,13 @@
 # exe
 PYTHON=$(which python3)
 
-# directories
+# executables
 BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
 SBIN_DIR=${BASE_DIR}/sbin
 TOOLS_DIR=${BASE_DIR}/tools
 TEMPLATE_DIR=${BASE_DIR}/templates
-WORKING_DIR=${BASE_DIR}
 
-# constants
-ROOT_PASSWORD='root_password'
-REMOTE_HOST_USER='hduser'
-REMOTE_HOST_PASSWD='hduser'
-HADOOP_VERSION=1.2.1
-SNAPPY_VERSION=1.1.1
-
-# settings file
+# settings
 SETTINGS_DIR=${HOME}/.docw
 REGISTRY_PATH=${SETTINGS_DIR}/registry
 ID_SEQUENCE_PATH=${SETTINGS_DIR}/sequence
@@ -102,8 +94,8 @@ update_namespace_hosts() {
 	for HOSTNAME in ${HOSTNAMES[@]}
 	do
 		# update /etc/hosts
-		scp ${HOSTS_PATH} root@${HOSTNAME}:/etc/hosts # > /dev/null 2>&1
-		ssh -n root@${HOSTNAME} 'service nscd restart' # > /dev/null 2>&1
+		scp ${HOSTS_PATH} root@${HOSTNAME}:/etc/hosts > /dev/null 2>&1
+		ssh -n root@${HOSTNAME} 'service nscd restart' > /dev/null 2>&1
 	done
 }
 
@@ -162,7 +154,7 @@ assign_ip_address() {
 	# add ssh fingerprint (root)
 	ssh-add ${HOME}/.ssh/id_rsa > /dev/null 2>&1
 
-	${TOOLS_DIR}/copy-ssh-first.ex ${HOME}/.ssh/id_rsa.pub ${HOSTNAME} root ${ROOT_PASSWORD} > /dev/null 2>&1
+	${TOOLS_DIR}/mkmaster root ${ROOT_PASSWORD} ${HOSTNAME} > /dev/null 2>&1
 
 	ssh-keyscan -H ${PUBLIC_IP} >> ~/.ssh/known_hosts
 	ssh-keyscan -H ${HOSTNAME} >> ~/.ssh/known_hosts
@@ -178,11 +170,18 @@ format_hosts() {
 	
 	for HOSTNAME in $@
 	do
-		echo "Configuring ${HOSTNAME}..."
 		assign_ip_address ${HOSTNAME}
-		ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH &
+		
+		# 1. install essential packages & create user
+		ssh root@${HOSTNAME} USERNAME=${REMOTE_HOST_USER} TIMEZONE=${TIMEZONE} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH' &
 	apt-get update
 	apt-get -y install ssh openssh-server screen expect bc build-essential nscd whois
+	
+	addgroup hadoop
+	useradd -m -g hadoop -p $(mkpasswd ${USERNAME}) ${USERNAME}
+	usermod -s /bin/bash ${USERNAME}
+	
+	ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime
 ENDSSH
 		PID_LIST=${PID_LIST}' '$!
 	done
@@ -190,7 +189,14 @@ ENDSSH
 	echo "Waiting for package installations to be completed..."
 	wait_all ${PID_LIST}
 	
-	echo "Completed."
+	# 2. copy essential tools
+	for HOSTNAME in $@
+	do
+		${TOOLS_DIR}/mkmaster --known ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD} ${HOSTNAME} > /dev/null 2>&1
+		
+		ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} 'mkdir -p ~/bin'
+		scp ${TOOLS_DIR}/mkmaster ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
+	done
 }
 
 # destroy node
@@ -248,10 +254,17 @@ rm_cluster() {
 # configure hadoop slave node.
 configure_hadoop_slave() {
 	HOSTNAME=$1
+	TEMP_HADOOP_ENV_PATH=$2
+	TEMP_YARN_ENV_PATH=$3
+	TEMP_CORE_SITE_PATH=$4
+	TEMP_MAPRED_SITE_PATH=$5
+	TEMP_HDFS_SITE_PATH=$6
+	TEMP_YARN_SITE_PATH=$7
+	TEMP_MASTERS_PATH=$8
+	TEMP_SLAVES_PATH=$9
 	
+	# 1. install packages
 	ssh root@${HOSTNAME} SNAPPY_VERSION=${SNAPPY_VERSION} USERNAME=${REMOTE_HOST_USER} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH'
-	apt-get update
-
 	# install java 7
 	apt-get -y install software-properties-common python-software-properties
 	add-apt-repository -y ppa:webupd8team/java
@@ -269,16 +282,9 @@ configure_hadoop_slave() {
 	cd ..
 	rm -rf snappy-${SNAPPY_VERSION}
 	rm snappy-${SNAPPY_VERSION}.tar.gz
-
-	# create user 'hduser'
-	addgroup hadoop
-	useradd -m -g hadoop -p $(mkpasswd ${USERNAME}) ${USERNAME}
-	usermod -s /bin/bash ${USERNAME}
 ENDSSH
 	
-	# add ssh fingerprint (user)
-	${TOOLS_DIR}/copy-ssh.ex ${HOME}/.ssh/id_rsa.pub ${HOSTNAME} ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD} > /dev/null 2>&1
-	
+	# 2. install hadoop
 	ssh ${REMOTE_HOST_USER}@${HOSTNAME} HADOOP_VERSION=${HADOOP_VERSION} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH'
 	# setup ssh
 	ssh-keygen -t rsa -P "" -f ~/.ssh/id_rsa
@@ -288,63 +294,94 @@ ENDSSH
 	# mkdir
 
 	mkdir -p ${HOME}/opt
-	mkdir ${HOME}/var/hadoop/tmp
-	mkdir ${HOME}/var/hdfs
+	mkdir -p ${HOME}/var/hadoop/tmp
+	mkdir -p ${HOME}/var/hdfs
 
 	# install hadoop
 
-	wget http://mirror.apache-kr.org/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}-bin.tar.gz
-	tar -xvf hadoop-${HADOOP_VERSION}-bin.tar.gz
+	wget http://mirror.apache-kr.org/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz
+	tar -xvf hadoop-${HADOOP_VERSION}.tar.gz
 	mv hadoop-${HADOOP_VERSION} ~/opt/hadoop
-	rm hadoop-${HADOOP_VERSION}-bin.tar.gz
-	cp /usr/local/lib/libsnappy.so ~/opt/hadoop/lib/native/Linux-amd64-64/
+	rm hadoop-${HADOOP_VERSION}.tar.gz
+	cp /usr/local/lib/libsnappy.so ~/opt/hadoop/lib/native/
+	
+	echo '' >> ~/.bashrc
+	echo "export HADOOP_PREFIX=~/opt/hadoop" >> ~/.bashrc
+	echo 'export PATH=${PATH}:~/bin:${HADOOP_PREFIX}/bin:${HADOOP_PREFIX}/sbin' >> ~/.bashrc
 ENDSSH
 	
-	# copy settings
-	scp ${WORKING_DIR}/hadoop-env.sh ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/ # > /dev/null 2>&1
-	scp ${WORKING_DIR}/core-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/mapred-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/hdfs-site.xml ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/masters ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
-	scp ${WORKING_DIR}/slaves ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/conf/
+	# 3. copy settings
+	scp ${TEMP_HADOOP_ENV_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/hadoop-env.sh # > /dev/null 2>&1
+	scp ${TEMP_YARN_ENV_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/yarn-env.sh # > /dev/null 2>&1
+	scp ${TEMP_CORE_SITE_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/core-site.xml # > /dev/null 2>&1
+	scp ${TEMP_MAPRED_SITE_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/mapred-site.xml # > /dev/null 2>&1
+	scp ${TEMP_HDFS_SITE_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/hdfs-site.xml # > /dev/null 2>&1
+	scp ${TEMP_YARN_SITE_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/yarn-site.xml # > /dev/null 2>&1
+	scp ${TEMP_MASTERS_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/masters # > /dev/null 2>&1
+	scp ${TEMP_SLAVES_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/slaves # > /dev/null 2>&1
+
+	# 4. copy tools
+	scp ${TOOLS_DIR}/distconf ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
+	scp ${TOOLS_DIR}/boot-all ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
+	scp ${TOOLS_DIR}/unboot-all ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
 }
 
 # generate hadoop settings
 generate_hadoop_settings() {
 	CLUSTER_NAME=$1
 	MASTER_HOSTNAME=$2
+	TEMP_HADOOP_ENV_PATH=$3
+	TEMP_YARN_ENV_PATH=$4
+	TEMP_CORE_SITE_PATH=$5
+	TEMP_MAPRED_SITE_PATH=$6
+	TEMP_HDFS_SITE_PATH=$7
+	TEMP_YARN_SITE_PATH=$8
+	TEMP_MASTERS_PATH=$9
+	TEMP_SLAVES_PATH=${10}
 	
 	SMALLEST_SIZE=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list minsize ${CLUSTER_NAME})
-	RESULT=$(${PYTHON} ${SBIN_DIR}/hadoop_conf.py ${SMALLEST_SIZE})
+	HOST_COUNT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list size ${CLUSTER_NAME})
+	
+	RESULT=$(${PYTHON} ${SBIN_DIR}/hadoop_conf.py ${SMALLEST_SIZE} ${HOST_COUNT})
 	TOKENS=( ${RESULT} )
-	MAP_TASK_MAX=${TOKENS[0]}
-	REDUCE_TASK_MAX=${TOKENS[1]}
-	HEAP_MAX=${TOKENS[2]}
-	TASK_HEAP_MAX=${TOKENS[3]}
+	CONTAINER_HEAP_MAX=${TOKENS[0]}
+	MAP_TASK_HEAP_MAX=${TOKENS[1]}
+	REDUCE_TASK_HEAP_MAX=${TOKENS[2]}
+	MAP_JVM_HEAP_MAX=${TOKENS[3]}
+	REDUCE_JVM_HEAP_MAX=${TOKENS[4]}
+	MAP_TASK_PER_NODE=${TOKENS[5]}
+	REDUCE_TASK_PER_NODE=${TOKENS[6]}
+	MAP_TASK_TOTAL=${TOKENS[7]}
+	REDUCE_TASK_TOTAL=${TOKENS[8]}
 
 	# create hadoop-env.sh
-	sed "s/VAR_HEAP_MAX/${HEAP_MAX}/" ${TEMPLATE_DIR}/hadoop-env.sh > ${WORKING_DIR}/hadoop-env.sh
+	sed "s/VAR_CONTAINER_HEAP_MAX/${CONTAINER_HEAP_MAX}/" ${TEMPLATE_DIR}/hadoop/hadoop-env.sh > ${TEMP_HADOOP_ENV_PATH}
+	
+	# create yarn-env.sh
+	cp ${TEMPLATE_DIR}/hadoop/yarn-env.sh ${TEMP_YARN_ENV_PATH}
 
 	# create core-site.xml
-	sed "s/VAR_NAMENODE/${MASTER_HOSTNAME}/" ${TEMPLATE_DIR}/core-site.xml > ${WORKING_DIR}/core-site.xml
+	sed "s/VAR_MASTER/${MASTER_HOSTNAME}/" ${TEMPLATE_DIR}/hadoop/core-site.xml > ${TEMP_CORE_SITE_PATH}
 
 	# create mapred-site.xml
-	sed "s/VAR_NAMENODE/${MASTER_HOSTNAME}/;s/VAR_MAP_TASK_MAX/${MAP_TASK_MAX}/;s/VAR_REDUCE_TASK_MAX/${REDUCE_TASK_MAX}/;s/VAR_TASK_HEAP_MAX/${TASK_HEAP_MAX}/;s/VAR_HEAP_MAX/${HEAP_MAX}/" ${TEMPLATE_DIR}/mapred-site.xml > ${WORKING_DIR}/mapred-site.xml
+	sed "s/VAR_MASTER/${MASTER_HOSTNAME}/;s/VAR_MAP_TASK_HEAP_MAX/${MAP_TASK_HEAP_MAX}/;s/VAR_REDUCE_TASK_HEAP_MAX/${REDUCE_TASK_HEAP_MAX}/;s/VAR_MAP_JVM_HEAP_MAX/${MAP_JVM_HEAP_MAX}/;s/VAR_REDUCE_JVM_HEAP_MAX/${REDUCE_JVM_HEAP_MAX}/;s/VAR_MAP_TASK_PER_NODE/${MAP_TASK_PER_NODE}/;s/VAR_REDUCE_TASK_PER_NODE/${REDUCE_TASK_PER_NODE}/;s/VAR_MAP_TASK_TOTAL/${MAP_TASK_TOTAL}/;s/VAR_REDUCE_TASK_TOTAL/${REDUCE_TASK_TOTAL}/" ${TEMPLATE_DIR}/hadoop/mapred-site.xml > ${TEMP_MAPRED_SITE_PATH}
 
 	# create hdfs-site.xml
-	cp ${TEMPLATE_DIR}/hdfs-site.xml ${WORKING_DIR}/hdfs-site.xml
+	sed "s/VAR_MASTER/${MASTER_HOSTNAME}/" ${TEMPLATE_DIR}/hadoop/hdfs-site.xml > ${TEMP_HDFS_SITE_PATH}
+
+	# create yarn-site.xml
+	sed "s/VAR_MASTER/${MASTER_HOSTNAME}/;s/VAR_CONTAINER_HEAP_MAX/${CONTAINER_HEAP_MAX}/" ${TEMPLATE_DIR}/hadoop/yarn-site.xml > ${TEMP_YARN_SITE_PATH}
 
 	# create masters
-	echo "${MASTER_HOSTNAME}" > ${WORKING_DIR}/masters
+	echo "${MASTER_HOSTNAME}" > ${TEMP_MASTERS_PATH}
 
 	# create slaves
-	touch ${WORKING_DIR}/slaves
 	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	for HOSTNAME in ${HOSTNAMES[@]}
 	do
-		echo ${HOSTNAME} >> ${WORKING_DIR}/slaves
+		echo ${HOSTNAME} >> ${TEMP_SLAVES_PATH}
 	done
 }
 
@@ -352,7 +389,16 @@ configure_hadoop_slave_all() {
 	CLUSTER_NAME=$1
 	MASTER_HOSTNAME=$2
 	
-	generate_hadoop_settings ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+	TEMP_HADOOP_ENV_PATH=$(mktemp)
+	TEMP_YARN_ENV_PATH=$(mktemp)
+	TEMP_CORE_SITE_PATH=$(mktemp)
+	TEMP_MAPRED_SITE_PATH=$(mktemp)
+	TEMP_HDFS_SITE_PATH=$(mktemp)
+	TEMP_YARN_SITE_PATH=$(mktemp)
+	TEMP_MASTERS_PATH=$(mktemp)
+	TEMP_SLAVES_PATH=$(mktemp)
+	
+	generate_hadoop_settings ${CLUSTER_NAME} ${MASTER_HOSTNAME} ${TEMP_HADOOP_ENV_PATH} ${TEMP_YARN_ENV_PATH} ${TEMP_CORE_SITE_PATH} ${TEMP_MAPRED_SITE_PATH} ${TEMP_HDFS_SITE_PATH} ${TEMP_YARN_SITE_PATH} ${TEMP_MASTERS_PATH} ${TEMP_SLAVES_PATH}
 	
 	# configure slaves
 	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
@@ -361,7 +407,7 @@ configure_hadoop_slave_all() {
 	PID_LIST=""
 	for HOSTNAME in ${HOSTNAMES[@]}
 	do
-		configure_hadoop_slave ${HOSTNAME} &
+		configure_hadoop_slave ${HOSTNAME} ${TEMP_HADOOP_ENV_PATH} ${TEMP_YARN_ENV_PATH} ${TEMP_CORE_SITE_PATH} ${TEMP_MAPRED_SITE_PATH} ${TEMP_HDFS_SITE_PATH} ${TEMP_YARN_SITE_PATH} ${TEMP_MASTERS_PATH} ${TEMP_SLAVES_PATH} &
 		PID_LIST=${PID_LIST}' '$!
 	done
 	
@@ -381,13 +427,6 @@ def main():
 if __name__ == "__main__":
 	sys.exit(main())
 EOF
-
-	rm ${WORKING_DIR}/hadoop-env.sh
-	rm ${WORKING_DIR}/core-site.xml
-	rm ${WORKING_DIR}/mapred-site.xml
-	rm ${WORKING_DIR}/hdfs-site.xml
-	rm ${WORKING_DIR}/masters
-	rm ${WORKING_DIR}/slaves
 }
 
 # configure loginless connection between master host and all hosts in same cluster.
@@ -398,14 +437,7 @@ configure_master_host() {
 	# 
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign master ${CLUSTER_NAME} ${MASTER_HOSTNAME}
 
-	# for all hosts in cluster
-	for HOSTNAME in ${@:2}
-	do
-		ssh -n ${REMOTE_HOST_USER}@${MASTER_HOSTNAME} 'bash -s' <<ENDSSH
-			\${HOME}/bin/copy-ssh-first.ex \${HOME}/.ssh/id_rsa.pub ${HOSTNAME} ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD}
-			ssh-keyscan -H \${SLAVE_HOSTNAME} >> \${HOME}/.ssh/known_hosts
-ENDSSH
-	done
+	ssh ${REMOTE_HOST_USER}@${MASTER_HOSTNAME} "/home/${REMOTE_HOST_USER}/bin/mkmaster ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD} ${@:2}"
 }
 
 # configure hadoop master node.
@@ -421,17 +453,14 @@ configure_hadoop_master() {
 	apt-get -y install python3 python3-dev python3-pip python3-numpy python3-scipy
 	pip3 install reservoir-sampling-cli
 ENDSSH
-
-	# configure tools
-	ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} 'mkdir -p ~/bin'
-	scp ${TOOLS_DIR}/copy-ssh-first.ex ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
-	scp ${SBIN_DIR}/distconf ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ # > /dev/null 2>&1
-	# scp ${SBIN_DIR}/mappercount ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
-	# scp ${SBIN_DIR}/reducercount ${REMOTE_HOST_USER}@${HOSTNAME}:~/bin/ > /dev/null 2>&1
 	
-	ssh ${REMOTE_HOST_USER}@${HOSTNAME} 'bash -s' <<ENDSSH
-	echo '' >> ~/.bashrc
-	echo "export HADOOP_INSTALL=~/opt/hadoop" >> ~/.bashrc
-	echo 'export PATH=\${PATH}:~/bin:\${HADOOP_INSTALL}/bin' >> ~/.bashrc
-ENDSSH
+	# update yarn-site.xml
+	TEMP_YARN_SITE_PATH=$(mktemp)
+	scp ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/yarn-site.xml ${TEMP_YARN_SITE_PATH} # > /dev/null 2>&1
+	
+	sed -i "s/<\/configuration>/<property>\n<name>yarn.nodemanager.localizer.address<\/name>\n<value>${HOSTNAME}:8060<\/value>\n<\/property>\n<\/configuration>/" ${TEMP_YARN_SITE_PATH}
+	
+	scp ${TEMP_YARN_SITE_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/yarn-site.xml # > /dev/null 2>&1
+
+	ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} "/home/${REMOTE_HOST_USER}/opt/hadoop/bin/hadoop namenode -format" > /dev/null 2>&1
 }
