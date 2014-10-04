@@ -8,9 +8,6 @@ Created on Mar 26, 2014
 import sys, argparse
 from dopy.manager import DoManager
 
-# Currently, ubuntu 14.04 is the only supported os.
-IMAGE_ID_MAP = { 'ubuntu-14.04': 6374753 }
-
 # Currently, only two regions are supported.
 REGION_ID_MAP = { 'nyc2': 4, 'sgp1': 6 }
 
@@ -35,13 +32,16 @@ def main():
 	parsed = parser.parse_args(sys.argv[1:])
 	args = vars(parsed)
 
-	hostname = args['hostname']
-	size = SIZE_ID_MAP[args['node_size']]
-	image_id = IMAGE_ID_MAP[args['image']]
-	region_id = REGION_ID_MAP[args['region']]
-
 	try:
 		do = DoManager(args['client_id'], args['api_key'])
+
+		hostname = args['hostname']
+		size = SIZE_ID_MAP[args['node_size']]
+
+		# find image id
+		image = next((img for img in do.all_images() if img['name'].replace(' ', '-').lower() == args['image']), None)
+		image_id = image['id']
+		region_id = REGION_ID_MAP[args['region']]
 		do.new_droplet(hostname, size, image_id, region_id, virtio=True, private_networking=True)
 		
 		return 0

@@ -14,11 +14,19 @@ ID_SEQUENCE_PATH=${SETTINGS_DIR}/sequence
 CFG_PATH=${SETTINGS_DIR}/config.cfg
 
 [ -d "${SETTINGS_DIR}" ] || mkdir ${SETTINGS_DIR}
-[ -f "${REGISTRY_PATH}" ] || echo '{ "entries": [], "clusters": [] }' > ${REGISTRY_PATH}
+[ -f "${REGISTRY_PATH}" ] || echo '{ "entries": [], "clusters": [], "namespaces": [] }' > ${REGISTRY_PATH}
 [ -f "${ID_SEQUENCE_PATH}" ] || echo '0' > ${ID_SEQUENCE_PATH}
 [ -f "${CFG_PATH}" ] || { cp ${BASE_DIR}/config-template.cfg ${CFG_PATH}; echo "config missing: please edit ${CFG_PATH}"; exit 0;}
 
 . ${CFG_PATH}
+
+BIN_DIR="/home/${REMOTE_HOST_USER}/bin"
+OPT_DIR="/home/${REMOTE_HOST_USER}/opt"
+ZOOKEEPER_INSTALL="${OPT_DIR}/zookeeper"
+ZOOKEEPER_DIR="/home/${REMOTE_HOST_USER}/var/zknode"
+ZOOKEEPER_CONF="${ZOOKEEPER_DIR}/zoo.cfg"
+ZOOKEEPER_DATA_DIR="${ZOOKEEPER_DIR}/data"
+ZOOKEEPER_LOG_DIR="${ZOOKEEPER_DIR}/log"
 
 # wait all
 wait_all() {
@@ -52,7 +60,7 @@ add_host() {
 	SIZE=$2
 
 	# create node
-	${PYTHON} ${SBIN_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE} -i ${OS_IMAGE} -r ${REGION}
+	${PYTHON} ${SBIN_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE} -i ${OS_DISTRO}-${OS_VERSION}-${OS_ARCHI} -r ${REGION}
 	
 	# add to register
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add host ${HOSTNAME} ${SIZE}
@@ -64,6 +72,12 @@ add_cluster() {
 	ROLE=$2
 	
 	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add cluster ${CLUSTER_NAME} ${ROLE}
+}
+
+# add namespace
+# args: namespace, clustername(optional)
+add_namespace() {
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add namespace $@
 }
 
 # add host to namespace
@@ -264,7 +278,7 @@ configure_hadoop_slave() {
 	TEMP_SLAVES_PATH=$9
 	
 	# 1. install packages
-	ssh root@${HOSTNAME} SNAPPY_VERSION=${SNAPPY_VERSION} USERNAME=${REMOTE_HOST_USER} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH'
+	ssh root@${HOSTNAME} SNAPPY_VERSION=${SNAPPY_VERSION} USERNAME=${REMOTE_HOST_USER} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH' # todo: USERNAME should be removed
 	# install java 7
 	apt-get -y install software-properties-common python-software-properties
 	add-apt-repository -y ppa:webupd8team/java
@@ -411,6 +425,7 @@ configure_hadoop_slave_all() {
 		PID_LIST=${PID_LIST}' '$!
 	done
 	
+	# todo - change to wait_all()
 	${PYTHON} - ${PID_LIST} << 'EOF'
 #!/usr/bin/python3
 
@@ -429,6 +444,7 @@ if __name__ == "__main__":
 EOF
 }
 
+# todo: to top.
 # configure loginless connection between master host and all hosts in same cluster.
 configure_master_host() {
 	CLUSTER_NAME=$1
@@ -463,4 +479,90 @@ ENDSSH
 	scp ${TEMP_YARN_SITE_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:~/opt/hadoop/etc/hadoop/yarn-site.xml # > /dev/null 2>&1
 
 	ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} "/home/${REMOTE_HOST_USER}/opt/hadoop/bin/hadoop namenode -format" > /dev/null 2>&1
+}
+
+# generate zookeeper settings
+generate_zookeeper_settings() {
+	TEMP_ZOO_CFG_PATH=$1
+	
+	${PYTHON} ${SBIN_DIR}/zookeeper_conf.py ${ZOOKEEPER_DATA_DIR} ${ZOOKEEPER_LOG_DIR} ${@:2} > ${TEMP_ZOO_CFG_PATH}
+}
+
+# configure zookeeper node.
+configure_zookeeper_node() {
+	HOSTNAME=$1
+	NODE_ID=$2
+	TEMP_ZOO_CFG_PATH=$3
+	
+	# 1. install java
+	ssh root@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<'ENDSSH'
+	# install java 7
+	apt-get -y install software-properties-common python-software-properties
+	add-apt-repository -y ppa:webupd8team/java
+	apt-get update
+	echo debconf shared/accepted-oracle-license-v1-1 select true | sudo debconf-set-selections
+	echo debconf shared/accepted-oracle-license-v1-1 seen true | sudo debconf-set-selections
+	apt-get -y --force-yes install oracle-java7-installer oracle-java7-set-default
+ENDSSH
+	
+	# 2. install zookeeper
+	ssh ${REMOTE_HOST_USER}@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH
+	mkdir -p ${BIN_DIR}
+	mkdir -p ${OPT_DIR}
+	mkdir -p ${ZOOKEEPER_DATA_DIR}
+	mkdir -p ${ZOOKEEPER_LOG_DIR}
+	echo ${NODE_ID} > ${ZOOKEEPER_DATA_DIR}/myid
+
+	wget http://apache.mirror.cdnetworks.com/zookeeper/zookeeper-${ZOOKEEPER_VERSION}/zookeeper-${ZOOKEEPER_VERSION}.tar.gz
+	tar -xvf zookeeper-${ZOOKEEPER_VERSION}.tar.gz
+	mv zookeeper-${ZOOKEEPER_VERSION} ${ZOOKEEPER_INSTALL}
+	rm zookeeper-${ZOOKEEPER_VERSION}.tar.gz
+
+	# zookeeper executable
+	echo '' >> ~/.bashrc
+	echo 'export PATH=$PATH:~/bin:${ZOOKEEPER_INSTALL}/bin' >> ~/.bashrc
+ENDSSH
+
+	# ssh -n ${REMOTE_HOST_USER}@${HOSTNAME} "echo 'export JAVA_OPTS=\"-Xms${ZK_XMS}m -Xmx${ZK_XMX}m\"' >> ${ZOOKEEPER_INSTALL}/conf/java.env"
+	
+	# 3. copy settings
+	scp ${TEMP_ZOO_CFG_PATH} ${REMOTE_HOST_USER}@${HOSTNAME}:${ZOOKEEPER_CONF} # > /dev/null 2>&1
+
+	# 4. copy tools
+	TEMP_BOOT_ALL=$(mktemp)
+	TEMP_UNBOOT_ALL=$(mktemp)
+	TEMP_ZKCLEAN=$(mktemp)
+	
+	echo "${ZOOKEEPER_INSTALL}/bin/zkServer.sh start ${ZOOKEEPER_CONF}" > ${TEMP_BOOT_ALL}
+	echo "${ZOOKEEPER_INSTALL}/bin/zkServer.sh stop ${ZOOKEEPER_CONF}" > ${TEMP_UNBOOT_ALL}
+	echo "rm -rf ${ZOOKEEPER_DATA_DIR}/* && rm -rf ${ZOOKEEPER_LOG_DIR}/*" > ${TEMP_ZKCLEAN}
+	
+	scp ${TEMP_BOOT_ALL} ${REMOTE_HOST_USER}@${HOSTNAME}:${BIN_DIR}/boot-all
+	scp ${TEMP_UNBOOT_ALL} ${REMOTE_HOST_USER}@${HOSTNAME}:${BIN_DIR}/unboot-all
+	scp ${TEMP_ZKCLEAN} ${REMOTE_HOST_USER}@${HOSTNAME}:${BIN_DIR}/zkclean
+
+	ssh ${REMOTE_HOST_USER}@${HOSTNAME} 'bash -s' >> /dev/null 2>&1 <<ENDSSH
+	chmod +x ${BIN_DIR}/*
+	${BIN_DIR}/boot-all
+ENDSSH
+}
+
+configure_zookeeper_all() {
+	# todo: check odd nodes
+
+	TEMP_ZOO_CFG_PATH=$(mktemp)
+	
+	generate_zookeeper_settings ${TEMP_ZOO_CFG_PATH} ${@}
+	
+	PID_LIST=""
+	I=0
+	for HOSTNAME in ${@}
+	do
+		I=$((${I} + 1))
+		configure_zookeeper_node ${HOSTNAME} ${I} ${TEMP_ZOO_CFG_PATH}
+		PID_LIST=${PID_LIST}' '$!
+	done
+	
+	echo "waiting for all installations are completed..."
+	wait_all ${PID_LIST}
 }

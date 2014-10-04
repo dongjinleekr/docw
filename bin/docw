@@ -58,7 +58,15 @@ print_mkcluster_usage() {
   echo ""
   echo "  where role are one of:"
   echo "    hadoop                   setup hadoop cluster. namenode hostname should be given as an option"
-  echo "                             The first specified host becomes namenode"
+  echo "                             The first specified host becomes namenode."
+  echo "    zookeeper                setup zookeeper cluster. As there is no master node in zookeeper cluster,"
+  echo "                             --master clause will be ignored in this case."
+  echo ""
+}
+
+print_merge_usage() {
+  echo ""
+  echo "Usage: docw merge <lns>* <rns>         merge namespace <lns 1>, <lns 2>... into <rns>."
   echo ""
 }
 
@@ -117,16 +125,12 @@ make_nodes() {
 	return 0
 }
 
-setup_hadoop_cluster() {
-	[ "$#" -eq 2 ] || return 1
-	
-	CLUSTER_NAME=$1
-	MASTER_HOSTNAME=$2
-	
-	configure_hadoop_slave_all ${CLUSTER_NAME} ${MASTER_HOSTNAME}
-	configure_hadoop_master ${CLUSTER_NAME} ${MASTER_HOSTNAME}
-	
-	return 0
+merge() {
+	[ "$#" -ge 3 ] || return 1
+
+	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} merge $@
+	NAMESPACE_NAME=${@:$#}
+	update_namespace_hosts ${NAMESPACE_NAME}
 }
 
 process_ls() {
@@ -235,19 +239,31 @@ case $1 in
 			MASTER_HOSTNAME=${ARGS[2]}
 
 			add_cluster ${CLUSTER_NAME} ${ROLE}
+			add_namespace ${CLUSTER_NAME} ${CLUSTER_NAME}
 			
 			for HOSTNAME in ${ARGS[@]:2}
 			do
 				assign_to_namespace ${CLUSTER_NAME} ${HOSTNAME}
 				assign_to_cluster ${CLUSTER_NAME} ${HOSTNAME}
-				update_namespace_hosts ${CLUSTER_NAME}
 			done
 
-			configure_master_host ${CLUSTER_NAME} ${ARGS[@]:2}
+			update_namespace_hosts ${CLUSTER_NAME}
 
 			case ${ROLE} in
 				hadoop)
-					setup_hadoop_cluster ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+					configure_hadoop_slave_all ${CLUSTER_NAME} ${MASTER_HOSTNAME} # todo
+					configure_master_host ${CLUSTER_NAME} ${ARGS[@]:2}
+					configure_hadoop_master ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+		
+					RETVAL=$?
+					if [ "${RETVAL}" -eq 0 ]; then
+						exit 0
+					else
+						exit 1
+					fi
+					;;
+				zookeeper)
+					configure_zookeeper_all ${ARGS[@]:2}
 		
 					RETVAL=$?
 					if [ "${RETVAL}" -eq 0 ]; then
@@ -260,6 +276,22 @@ case $1 in
 					exit 1
 					;;
 			esac
+		fi
+		;;
+	merge)
+		shift 1
+		if [ "$#" -eq 0 ]; then
+			print_merge_usage
+			exit 0
+		else
+			merge $@
+	
+			RETVAL=$?
+			if [ "${RETVAL}" -eq 0 ]; then
+				exit 0
+			else
+				exit 1
+			fi
 		fi
 		;;
 	format)

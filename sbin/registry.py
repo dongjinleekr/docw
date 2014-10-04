@@ -36,10 +36,19 @@ def add_cluster(regStatus, clustername, role):
 	if any(c['name'] == clustername for c in regStatus['clusters']):
 		raise ValueError('cluster %s already exists' % clustername)
 	else:
-		if role in { 'hadoop' }:
+		if role in { 'hadoop', 'zookeeper' }:
 			regStatus['clusters'].append({ 'name': clustername, 'role': role })
 		else:
 			raise ValueError('Invalid role: %s' % role)
+
+def add_namespace(regStatus, *argv):
+	namespacename = argv[0]
+
+	if any(n['name'] == namespacename for n in regStatus['namespaces']):
+		raise ValueError('namespace %s already exists' % namespacename)
+	else:
+		clusternames = set.intersection(set(argv[1:]), set([ c['name'] for c in regStatus['clusters'] ]))
+		regStatus['namespaces'].append({ 'name': namespacename, 'clusters': list(clusternames) })
 
 def display_all_clusters_info(regStatus):	
 	clusters = [ c['name'] for c in regStatus['clusters'] ]
@@ -173,7 +182,24 @@ def assign_to_cluster(regStatus, clustername, hostname):
 			raise ValueError('IP addresses not assigned yet: %s' % hostname)
 	else:
 		raise ValueError('host %s does not exist' % hostname)
-		
+
+def merge_namespace(regStatus, *args):
+	toBeMerged = args[:-1]
+	afterMerge = args[-1]
+
+	# change namespace of all entries
+	for e in (e for e in regStatus['entries'] if e['namespace'] in toBeMerged):
+		e['namespace'] = afterMerge
+
+	# remove order namespace and collect its clusters
+	toBeRemoved = [ n for n in regStatus['namespaces'] if n['name'] in toBeMerged ]
+	clusters = [ c for ns in toBeRemoved for c in ns['clusters'] ]
+
+	for ns in toBeRemoved:
+		regStatus['namespaces'].remove(ns)
+	
+	regStatus['namespaces'].append({ 'name': afterMerge, 'clusters': clusters })
+
 def list_cluster_hosts(regStatus, clustername):
 	print('\t'.join([ e['hostname'] for e in regStatus['entries'] if 'cluster' in e and e['cluster'] == clustername ]))
 		
@@ -205,6 +231,10 @@ def remove_cluster(regStatus, clustername):
 	
 	if cluster:
 		regStatus['clusters'].remove(cluster)
+
+		# remove from namespaces
+		for n in regStatus['namespaces']:
+			n['clusters'].remove(clustername)
 	else:
 		raise ValueError('cluster %s does not exist' % clustername)
 
@@ -259,6 +289,11 @@ def add_command(regStatus, argv):
 				add_cluster(regStatus, clustername, role)
 			else:
 				raise ValueError('Incorrect arguments for add cluster: %s' % ' '.join(argv[1:]))
+		elif 'namespace' == dst:
+			if len(argv) >= 2:
+				add_namespace(regStatus, *argv[1:])
+			else:
+				raise ValueError('Incorrect arguments for add namespace: %s' % ' '.join(argv[1:]))
 		else:
 			raise ValueError('Incorrect arguments for add: %s' % ' '.join(argv))
 			
@@ -343,6 +378,17 @@ def assign_command(regStatus, argv):
 	else:
 		raise ValueError('Incorrect arguments for assign: %s' % ' '.join(argv))
 
+def merge_command(regStatus, argv):
+	if argv:
+		if len(argv) >= 3:
+			merge_namespace(regStatus, *argv)
+		else:
+			raise ValueError('Incorrect arguments for merge: %s' % ' '.join(argv[1:]))
+		
+		return 1
+	else:
+		raise ValueError('Incorrect arguments for merge: %s' % ' '.join(argv))
+
 def list_command(regStatus, argv):
 	if argv:
 		dst = argv[0]
@@ -413,6 +459,7 @@ def main():
 		'display': display_command,
 		'generate': generate_command,
 		'assign': assign_command,
+		'merge': merge_command,
 		'list': list_command,
 		'remove': remove_command,
 	}

@@ -1,85 +1,74 @@
-docw
-====
+docw (ver. 0.5)
+===============
 
 DOCW is a cli-based tool for building JIT cluster on top of DigitalOcean™ cloud service. Using this tool, you can deploy your own hadoop cluster easily & quickly.
 
-## Creating Node(s)
+# Prerequisitives #
 
-With following syntax, you can create a node on your digitalocean account:
+* python 3 with psutil, dopy package.
 
-Syntax:
+# Quickstart #
 
-> docw mknode \<size\>
+## Creating hadoop cluster in 5 minutes ##
 
-Example:
+> docw mknodes 4 2	\# create 2 nodes, each of which has 4 cores.
 
-> docw mknode 4  \# create a node, with 4 cores.
+This command creates droplets for your digitalocean account. Be sure that you have enough droplet limit, whose default value is 5. If you request for more droplets, admins will raise your limit. Wait until all created droplets are active and temporary passwords are delivered to your email.
 
-Hostnames are given automatically using your username. For example, if your unix username is 'joker', docw will create hosts named with joker-0, joker-1, ... and so on. In my case, it is 'dongjinleekr'.
+Hostnames are given automatically using your username. For example, if your unix username is 'joker', docw will create hosts named with joker-0, joker-1, ... and so on. In my case, it was 'dongjinleekr'.
 
-You can also create multiple nodes at once:
+> docw format --all
 
-Syntax:
+This command conducts following works, for each droplet:
 
-> docw mknodes \<size\> \<count\>
+1. Reset root password: by default, 'root_password'.
+2. Add hostname-ip address mapping to your /etc/hosts.
+3. Install basic packages, e.g. nscd.
+4. Add user account. by default, 'hduser' / 'hduser'.
+5. Establish loginless connection between your machine and the created host.
 
-Example:
+By following command, hadoop cluster is completed:
 
-> docw mknodes 4 3  \# Create 3 hosts at once, each of which has 2 cores.
+> docw mkcluster testhd hadoop ${USER}-0 ${USER}-1	\# configure hadoop cluster, whose master node would be ${USER}-0
 
-## Formatting Node(s)
+After above command completed, connect to master node and run hadoop cluster:
 
-When a digitalocean node is created, its root password is ramdonly generated and delivered via your email account. Before using it, you have to complete following tasks:
+> ssh hduser@${USER}-0
+> boot-all
 
-1. reset root password: by default, 'root_password'.
-2. add hostname-ip address mapping to your local /etc/hosts.
-3. establish loginless connection between your local machine and the node.
-4. install basic packages, e.g. nscd.
+Now, you have a hadoop cluster consists of ${USER}-0 and ${USER}-1.
 
-You can do all above tasks at once, with following command:
+## Creating zookeeper cluster in 5 minutes ##
 
-Syntax:
+Creating zookeeper cluster is also easy.
 
-> docw format \<hostname\>*
+> docw mknodes 2 3
 
-Example:
+> docw format --all
 
-> docw format dongjinleekr-0 dongjinleekr-1 dongjinleekr-2
+> docw mkcluster testzk zookeeper ${USER}-2 ${USER}-3 ${USER}-4
 
-When the job completes, check your /etc/hosts. You can see all the host we made so far are added to your hosts file. You can also connect to each of them using **ssh root@\<hostname\>**.
+If you want to use created zookeeper cluster from created hadoop cluster, bond two clusters:
 
-## Making a Cluster
-
-Now You can create cluster with formatted hosts. By version 0.5, docw only supports hadoop 1.2.1.
-
-Syntax:
-
-> docw mkcluster \<cluster-name\> \<role\> \<hostname\>*
-
-Example:
-
-> docw mkcluster hdcluster hadoop dongjinleekr-1 dongjinleekr-2  \# create hadoop cluster named 'hdcluster',  using two formatted nodes. dongjinleekr-1 becomes namenode.
-
-let's connect to namenode and launch hadoop cluster:
-
-> ssh hduser@dongjinleekr-1
-> 
-> hadoop namenode -format
-> 
-> start-all.sh
-
-## Querying
-
-Using docw, you can create & manage multiple clusters, with different names. To check the information about any cluster, please input **docw ls \<cluster\>**. Using **docw ls --all**, you can see the whole list of running clusters.
+> docw merge testzk testhd testcl
 
 ## Removing Cluster
 
 After use, delete the whole cluster:
 
-Syntax:
+> docw rmcluster testhd
+> docw rmcluster testzk
 
-> docw rmcluster \<cluster-name\>
+## Future Plans
 
-Example:
+In version 0.6, following features will be supported:
 
-> docw rmcluster hdcluster
+1. Boilerplated arguments processing.
+2. Spark support.
+3. Automated prerequisitives configuration.
+4. Code refine.
+5. More documentations.
+
+If you have any questions or proposes, don't hesitate to contact me: dongjin.lee.kr@gmail.com.
+
+Thanks a lot!
