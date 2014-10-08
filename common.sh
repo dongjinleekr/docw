@@ -1,7 +1,7 @@
-# exe
+# executables
 PYTHON=$(which python3)
 
-# executables
+# paths
 BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
 SBIN_DIR=${BASE_DIR}/sbin
 UTILS_DIR=${BASE_DIR}/utils
@@ -149,7 +149,8 @@ assign_ip_address() {
 	ssh-keygen -R ${PUBLIC_IP} -f "${HOME}/.ssh/known_hosts" > /dev/null 2>&1
 
 	# acquire temporary password
-	TMP_PASSWORD=$(${PYTHON} ${UTILS_DIR}/fetchmail.py ${CLIENT_ID} ${API_KEY} ${EMAIL_SERVER} ${EMAIL_USERNAME} ${EMAIL_PASSWORD} ${HOSTNAME})
+	GETTMP=$(which docw-gettmp)
+	TMP_PASSWORD=$(${GETTMP} ${CLIENT_ID} ${API_KEY} ${EMAIL_SERVER} ${EMAIL_USERNAME} ${EMAIL_PASSWORD} ${HOSTNAME})
 	[ -z "${TMP_PASSWORD}" ] && return 1
 
 	# reset password

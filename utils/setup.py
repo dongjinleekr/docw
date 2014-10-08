@@ -44,4 +44,10 @@ python scripts for docw, available in Python 3.0+.
         'psutil >= 2.1.3',
         'dopy >= 0.2.5',
     ],
+    
+    entry_points={
+        'console_scripts': [
+            'docw-gettmp = docw.gettmp:main',
+        ],
+    },
 )
