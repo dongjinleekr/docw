@@ -4,6 +4,7 @@ PYTHON=$(which python3)
 # executables
 BASE_DIR=$(dirname $(dirname $(readlink -f $0)))
 SBIN_DIR=${BASE_DIR}/sbin
+UTILS_DIR=${BASE_DIR}/utils
 TOOLS_DIR=${BASE_DIR}/tools
 TEMPLATE_DIR=${BASE_DIR}/templates
 
@@ -51,7 +52,7 @@ EOF
 # validation procedures
 
 validate_mkcluster() {
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} validate mkcluster ${@}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} validate mkcluster ${@}
 }
 
 # add host
@@ -60,10 +61,10 @@ add_host() {
 	SIZE=$2
 
 	# create node
-	${PYTHON} ${SBIN_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE} -i ${OS_DISTRO}-${OS_VERSION}-${OS_ARCHI} -r ${REGION}
+	${PYTHON} ${UTILS_DIR}/create.py -c ${CLIENT_ID} -a ${API_KEY} -n ${HOSTNAME} -s ${SIZE} -i ${OS_DISTRO}-${OS_VERSION}-${OS_ARCHI} -r ${REGION}
 	
 	# add to register
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add host ${HOSTNAME} ${SIZE}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} add host ${HOSTNAME} ${SIZE}
 }
 
 # add cluster
@@ -71,13 +72,13 @@ add_cluster() {
 	CLUSTER_NAME=$1
 	ROLE=$2
 	
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add cluster ${CLUSTER_NAME} ${ROLE}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} add cluster ${CLUSTER_NAME} ${ROLE}
 }
 
 # add namespace
 # args: namespace, clustername(optional)
 add_namespace() {
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} add namespace $@
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} add namespace $@
 }
 
 # add host to namespace
@@ -85,7 +86,7 @@ assign_to_namespace() {
 	NAMESPACE_NAME=$1
 	HOSTNAME=$2
 	
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign namespace ${NAMESPACE_NAME} ${HOSTNAME}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} assign namespace ${NAMESPACE_NAME} ${HOSTNAME}
 }
 
 # add host to cluster
@@ -93,16 +94,16 @@ assign_to_cluster() {
 	CLUSTER_NAME=$1
 	HOSTNAME=$2
 	
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign cluster ${CLUSTER_NAME} ${HOSTNAME}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} assign cluster ${CLUSTER_NAME} ${HOSTNAME}
 }
 
 update_namespace_hosts() {
 	NAMESPACE_NAME=$1
 	
 	HOSTS_PATH=$(mktemp)
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate private ${HOSTS_PATH} ${NAMESPACE_NAME}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} generate private ${HOSTS_PATH} ${NAMESPACE_NAME}
 	
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list namespace ${NAMESPACE_NAME})
+	RESULT=$(${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} list namespace ${NAMESPACE_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	for HOSTNAME in ${HOSTNAMES[@]}
@@ -115,14 +116,14 @@ update_namespace_hosts() {
 
 # 
 display_all_clusters_info() {
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} display --all
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} display --all
 }
 
 #
 display_cluster_info() {
 	CLUSTER_NAME=$1
 	
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} display ${CLUSTER_NAME}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} display ${CLUSTER_NAME}
 }
 
 # 
@@ -134,13 +135,13 @@ assign_ip_address() {
 	UPDATED_HOSTS_PATH=$(mktemp)
 	
 	# get /etc/hosts entries which are not in registry. note: can be abstracted.
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
 	cp /etc/hosts ${CURRENT_HOSTS_PATH}
 	grep -F -x -v -f ${REGISTERED_HOSTS_PATH} ${CURRENT_HOSTS_PATH} > ${UPDATED_HOSTS_PATH}
 	CURRENT_HOSTS_PATH=${UPDATED_HOSTS_PATH}
 
 	# acquire ip address
-	RESULT=$(${PYTHON} ${SBIN_DIR}/inspect.py ${CLIENT_ID} ${API_KEY} ${HOSTNAME})
+	RESULT=$(${PYTHON} ${UTILS_DIR}/inspect.py ${CLIENT_ID} ${API_KEY} ${HOSTNAME})
 	TOKENS=( ${RESULT} )
 	PUBLIC_IP=${TOKENS[0]}
 	PRIVATE_IP=${TOKENS[1]}
@@ -148,18 +149,18 @@ assign_ip_address() {
 	ssh-keygen -R ${PUBLIC_IP} -f "${HOME}/.ssh/known_hosts" > /dev/null 2>&1
 
 	# acquire temporary password
-	TMP_PASSWORD=$(${PYTHON} ${SBIN_DIR}/fetchmail.py ${CLIENT_ID} ${API_KEY} ${EMAIL_SERVER} ${EMAIL_USERNAME} ${EMAIL_PASSWORD} ${HOSTNAME})
+	TMP_PASSWORD=$(${PYTHON} ${UTILS_DIR}/fetchmail.py ${CLIENT_ID} ${API_KEY} ${EMAIL_SERVER} ${EMAIL_USERNAME} ${EMAIL_PASSWORD} ${HOSTNAME})
 	[ -z "${TMP_PASSWORD}" ] && return 1
 
 	# reset password
 	${SBIN_DIR}/init-${REGION}.ex ${PUBLIC_IP} ${TMP_PASSWORD} ${ROOT_PASSWORD} > /dev/null 2>&1
 
 	# add to registry
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign address ${HOSTNAME} ${PUBLIC_IP} ${PRIVATE_IP}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} assign address ${HOSTNAME} ${PUBLIC_IP} ${PRIVATE_IP}
 
 	# update /etc/hosts. note: can be abstracted.
 	REGISTERED_HOSTS_PATH=$(mktemp)
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
 	cat ${REGISTERED_HOSTS_PATH} >> ${CURRENT_HOSTS_PATH}
 	sudo cp ${CURRENT_HOSTS_PATH} /etc/hosts
 
@@ -175,7 +176,7 @@ assign_ip_address() {
 }
 
 raw_hosts() {
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list raw
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} list raw
 }
 
 format_hosts() {
@@ -223,17 +224,17 @@ destroy_node() {
 	ssh-keygen -R ${HOSTNAME}
 	
 	# remove from registry
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} remove host ${HOSTNAME}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} remove host ${HOSTNAME}
 	
 	# destroy droplet
-	${PYTHON} ${SBIN_DIR}/destroy.py -c ${CLIENT_ID} -k ${API_KEY} -n ${HOSTNAME}
+	${PYTHON} ${UTILS_DIR}/destroy.py -c ${CLIENT_ID} -k ${API_KEY} -n ${HOSTNAME}
 }
 
 # destroy cluster
 rm_cluster() {
 	CLUSTER_NAME=$1
 
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} remove cluster ${CLUSTER_NAME}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} remove cluster ${CLUSTER_NAME}
 	RETVAL=$?
 	[ "${RETVAL}" -eq 1 ] && exit 1
 	
@@ -242,13 +243,13 @@ rm_cluster() {
 	UPDATED_HOSTS_PATH=$(mktemp)
 
 	# get /etc/hosts entries which are not in registry. note: can be abstracted.
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
 	cp /etc/hosts ${CURRENT_HOSTS_PATH}
 	grep -F -x -v -f ${REGISTERED_HOSTS_PATH} ${CURRENT_HOSTS_PATH} > ${UPDATED_HOSTS_PATH}
 	CURRENT_HOSTS_PATH=${UPDATED_HOSTS_PATH}
 	
 	# unregister and destroy
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 
 	for HOSTNAME in ${HOSTNAMES[@]}
@@ -258,7 +259,7 @@ rm_cluster() {
 
 	# update /etc/hosts. note: can be abstracted.
 	REGISTERED_HOSTS_PATH=$(mktemp)
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} generate public ${REGISTERED_HOSTS_PATH}
 	cat ${REGISTERED_HOSTS_PATH} >> ${CURRENT_HOSTS_PATH}
 	sudo cp ${CURRENT_HOSTS_PATH} /etc/hosts
 
@@ -353,10 +354,10 @@ generate_hadoop_settings() {
 	TEMP_MASTERS_PATH=$9
 	TEMP_SLAVES_PATH=${10}
 	
-	SMALLEST_SIZE=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list minsize ${CLUSTER_NAME})
-	HOST_COUNT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list size ${CLUSTER_NAME})
+	SMALLEST_SIZE=$(${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} list minsize ${CLUSTER_NAME})
+	HOST_COUNT=$(${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} list size ${CLUSTER_NAME})
 	
-	RESULT=$(${PYTHON} ${SBIN_DIR}/hadoop_conf.py ${SMALLEST_SIZE} ${HOST_COUNT})
+	RESULT=$(${PYTHON} ${UTILS_DIR}/hadoop_conf.py ${SMALLEST_SIZE} ${HOST_COUNT})
 	TOKENS=( ${RESULT} )
 	CONTAINER_HEAP_MAX=${TOKENS[0]}
 	MAP_TASK_HEAP_MAX=${TOKENS[1]}
@@ -390,7 +391,7 @@ generate_hadoop_settings() {
 	echo "${MASTER_HOSTNAME}" > ${TEMP_MASTERS_PATH}
 
 	# create slaves
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	for HOSTNAME in ${HOSTNAMES[@]}
@@ -415,7 +416,7 @@ configure_hadoop_slave_all() {
 	generate_hadoop_settings ${CLUSTER_NAME} ${MASTER_HOSTNAME} ${TEMP_HADOOP_ENV_PATH} ${TEMP_YARN_ENV_PATH} ${TEMP_CORE_SITE_PATH} ${TEMP_MAPRED_SITE_PATH} ${TEMP_HDFS_SITE_PATH} ${TEMP_YARN_SITE_PATH} ${TEMP_MASTERS_PATH} ${TEMP_SLAVES_PATH}
 	
 	# configure slaves
-	RESULT=$(${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
+	RESULT=$(${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} list cluster ${CLUSTER_NAME})
 	HOSTNAMES=( ${RESULT} )
 	
 	PID_LIST=""
@@ -451,7 +452,7 @@ configure_master_host() {
 	MASTER_HOSTNAME=$2
 	
 	# 
-	${PYTHON} ${SBIN_DIR}/registry.py ${REGISTRY_PATH} assign master ${CLUSTER_NAME} ${MASTER_HOSTNAME}
+	${PYTHON} ${UTILS_DIR}/registry.py ${REGISTRY_PATH} assign master ${CLUSTER_NAME} ${MASTER_HOSTNAME}
 
 	ssh ${REMOTE_HOST_USER}@${MASTER_HOSTNAME} "/home/${REMOTE_HOST_USER}/bin/mkmaster ${REMOTE_HOST_USER} ${REMOTE_HOST_PASSWD} ${@:2}"
 }
@@ -485,7 +486,7 @@ ENDSSH
 generate_zookeeper_settings() {
 	TEMP_ZOO_CFG_PATH=$1
 	
-	${PYTHON} ${SBIN_DIR}/zookeeper_conf.py ${ZOOKEEPER_DATA_DIR} ${ZOOKEEPER_LOG_DIR} ${@:2} > ${TEMP_ZOO_CFG_PATH}
+	${PYTHON} ${UTILS_DIR}/zookeeper_conf.py ${ZOOKEEPER_DATA_DIR} ${ZOOKEEPER_LOG_DIR} ${@:2} > ${TEMP_ZOO_CFG_PATH}
 }
 
 # configure zookeeper node.
