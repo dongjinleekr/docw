@@ -24,7 +24,7 @@ def fetch(server, username, password, hostname):
 	
 	msgIds = found[0].split()
 	if 1 == len(msgIds):
-		_, data = mailbox.fetch(msgIds[0], '(RFC822)') # data = [ (a, b), c ]
+		_, data = mailbox.fetch(msgIds[0], '(RFC822)')  # data = [ (a, b), c ]
 		# contents = data[0][1].decode(encoding='UTF-8')
 		msg = email.message_from_bytes(data[0][1])
 		body = msg.get_payload()
