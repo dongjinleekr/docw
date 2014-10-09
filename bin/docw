@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# The docw command script
+# The main executable script of docw.
+# It provides a interactive command line interface, alongside with help messages.
 
 # initialize env
 BASE_DIR=$(dirname $(dirname $(readlink -f $0)))

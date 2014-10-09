@@ -1,3 +1,9 @@
+#!/usr/bin/env bash
+
+# Loads user configuration and set path to sbin/, utils/ scripts.
+# It is also useful when you want to run sbin/ scripts without per-user
+# configurations.
+
 # executables
 PYTHON=$(which python3)
 
