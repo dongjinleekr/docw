@@ -1,0 +1,11 @@
+[
+  {
+    "role": "hadoop",
+    "hosts": [
+      {
+        "size": "4gb",
+        "count": 2
+      }
+    ]
+  }
+]

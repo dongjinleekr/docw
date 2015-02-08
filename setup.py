@@ -15,7 +15,7 @@ if sys.version_info[0] != 3:
 
 setup(
   # Application name:
-  name='docwutils',
+  name='docw',
 
   # Version number:
   version=docw.__version__,
@@ -25,31 +25,36 @@ setup(
   author_email="dongjin.lee.kr@gmail.com",
 
   # Packages
-  packages=["docw"],
+  packages=['docw'],
 
   # Details
   url="https://github.com/dongjinleekr/docw",
 
   #
   license=docw.__license__,
-  description="python scripts for docw.",
+  description="Digitalocean(tm) Cluster Wizard.",
 
   long_description=
 """\
-python scripts for docw, available in Python 3.0+.
+Digitalocean(tm) Cluster Wizard, available in Python 3.0+.
 """,
 
   # Dependent packages (distributions)
   install_requires=[
-    'psutil >= 2.1.3',
-    'dopy >= 0.2.5',
     'lxml >= 3.3.3',
+    'paramiko >= 1.15.2',
+    'python-digitalocean >= 1.3',
+    'scp',
+    'pexpect >= 3.3',
   ],
-  
+
+  dependency_links=[
+        "https://github.com/jbardin/scp.py.git"
+  ],
+
   entry_points={
     'console_scripts': [
-      'docw-gettmp = docw.gettmp:main',
-      'docw-hdconf = docw.hdconf:main',
+      'docw = docw.docw:main',
     ],
   },
 )

@@ -6,4 +6,4 @@ This module offers droplet management for docw
 """
 __author__ = "Dongjin Lee <dongjin.lee.kr@gmail.com>"
 __license__ = "Apache License, Version 2.0"
-__version__ = "0.7"
+__version__ = "0.9"
