@@ -1,73 +1,49 @@
-docw (ver. 0.5)
+docw (ver. 0.6)
 ===============
 
-DOCW is a cli-based tool for building JIT cluster on top of DigitalOcean™ cloud service. Using this tool, you can deploy your own hadoop cluster easily & quickly.
+DOCW is a cli tool aimed to building JIT cluster on top of DigitalOcean™ cloud service. Using this tool, you can create & destroy your own cluster easily & quickly.
 
-# Prerequisitives #
+As of version 0.6, it supports hadoop & zookeeper cluster.
 
-* python 3 with psutil, dopy package.
+# Prerequisitives
 
-# Quickstart #
+* unix-like system
 
-## Creating hadoop cluster in 5 minutes ##
+    I developed & tested it on Ubuntu 14.04 environment.
 
-> docw mknodes 4 2	\# create 2 nodes, each of which has 4 cores.
+* python 3
+* nscd
 
-This command creates droplets for your digitalocean account. Be sure that you have enough droplet limit, whose default value is 5. If you request for more droplets, admins will raise your limit. Wait until all created droplets are active and temporary passwords are delivered to your email.
+    If not, install it by `sudo apt-get -y install nscd`
 
-Hostnames are given automatically using your username. For example, if your unix username is 'joker', docw will create hosts named with joker-0, joker-1, ... and so on. In my case, it was 'dongjinleekr'.
+# Quickstart
 
-> docw format --all
+## Install
 
-This command conducts following works, for each droplet:
+> `sudo python3 setup.py install`
 
-1. Reset root password: by default, 'root_password'.
-2. Add hostname-ip address mapping to your /etc/hosts.
-3. Install basic packages, e.g. nscd.
-4. Add user account. by default, 'hduser' / 'hduser'.
-5. Establish loginless connection between your machine and the created host.
+or
 
-By following command, hadoop cluster is completed:
+> `python3 setup.py install --user`
 
-> docw mkcluster testhd hadoop ${USER}-0 ${USER}-1	\# configure hadoop cluster, whose master node would be ${USER}-0
+## Create new cluster
 
-After above command completed, connect to master node and run hadoop cluster:
+The following command creates a hadoop cluster on your DigitalOcean™ account, consists of 1 master node + [2 slave nodes](https://raw.githubusercontent.com/dongjinleekr/docw/master/template-hadoop-tiny.json). The details of created cluster is stored in [cluster-name].json. (In this case, tinycluster.json)
 
-> ssh hduser@${USER}-0
-> boot-all
+> `docw create tinycluster template-hadoop-tiny.json`
 
-Now, you have a hadoop cluster consists of ${USER}-0 and ${USER}-1.
+## Destroy
 
-## Creating zookeeper cluster in 5 minutes ##
+The following command destroys the hadoop cluster namded 'tinycluster'.
 
-Creating zookeeper cluster is also easy.
+> `docw destroy tinycluster.json`
 
-> docw mknodes 2 3
+# Future Plans
 
-> docw format --all
+In version 0.7, the following features will be supported:
 
-> docw mkcluster testzk zookeeper ${USER}-2 ${USER}-3 ${USER}-4
-
-If you want to use created zookeeper cluster from created hadoop cluster, bond two clusters:
-
-> docw merge testzk testhd testcl
-
-## Removing Cluster
-
-After use, delete the whole cluster:
-
-> docw rmcluster testhd
-> docw rmcluster testzk
-
-## Future Plans
-
-In version 0.6, following features will be supported:
-
-1. Boilerplated arguments processing.
-2. Spark support.
-3. Automated prerequisitives configuration.
-4. Code refine.
-5. More documentations.
+1. Apache Spark, Apache Hama support.
+2. 'resume' command: If your cluster creation was terminated un-normally, you don't have to destroy & recreate the cluster any more.
 
 If you have any questions or proposes, don't hesitate to contact me: dongjin.lee.kr@gmail.com.
 
